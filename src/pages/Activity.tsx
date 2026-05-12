@@ -129,6 +129,10 @@ export default function Activity() {
   const [isAutoCenter, setIsAutoCenter] = useState(true);
   const [gpsSignal, setGpsSignal] = useState<'strong' | 'medium' | 'weak'>('strong');
   const [currentActivityId, setCurrentActivityId] = useState<string | null>(null);
+  const [showConfirmStop, setShowConfirmStop] = useState(false);
+  const [paceThreshold, setPaceThreshold] = useState(5.0); // min/km
+  const [distanceThreshold, setDistanceThreshold] = useState(1.0); // km
+  const [alertTriggered, setAlertTriggered] = useState<string | null>(null);
   
   // Custom dark map tiles via CartoDB
   const mapboxUrl = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
@@ -177,7 +181,19 @@ export default function Activity() {
                 const d = getDistance(lastPos[0], lastPos[1], latitude, longitude);
                 // Require at least 5 meters movement to add to path
                 if (d > 0.005) {
-                  setDistance(prevDist => prevDist + d);
+                  const newDist = distance + d;
+
+                  // Pace/Distance Alert Check
+                  const currentPace = (time / 60) / (newDist || 1); // simple pace projection
+                  if (newDist >= distanceThreshold && alertTriggered !== 'distance') {
+                      triggerHaptics('heavy');
+                      setAlertTriggered('distance');
+                  } else if (currentPace <= paceThreshold && alertTriggered !== 'pace') {
+                      triggerHaptics('heavy');
+                      setAlertTriggered('pace');
+                  }
+
+                  setDistance(newDist);
                   return [...prev, newPos];
                 }
                 return prev;
@@ -222,6 +238,10 @@ export default function Activity() {
   }
   
   const handleStop = async () => {
+    setShowConfirmStop(true);
+  };
+  
+  const performStop = async () => {
     triggerHaptics('heavy');
     setWorkoutState('finished');
     if (routePath.length > 0) {
@@ -255,6 +275,8 @@ export default function Activity() {
     setTime(0);
     setDistance(0);
     setCurrentActivityId(null);
+    setShowConfirmStop(false);
+    setAlertTriggered(null);
   };
 
   const currentPace = distance > 0 ? (time / 60) / distance : 0;
@@ -262,6 +284,22 @@ export default function Activity() {
 
   return (
     <div className="relative h-[100dvh] w-full bg-black overflow-hidden flex flex-col md:flex-row">
+      <AnimatePresence>
+        {showConfirmStop && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="absolute inset-0 z-[1000] bg-black/80 backdrop-blur-md flex items-center justify-center p-8"
+          >
+            <div className="bg-[#111] border border-[#333] p-8 rounded-3xl w-full max-w-sm text-center">
+              <h3 className="text-xl font-bold text-white mb-6">Stop Workout?</h3>
+              <div className="flex gap-4">
+                <button onClick={() => setShowConfirmStop(false)} className="flex-1 py-4 bg-[#222] rounded-full font-bold text-white">Resume</button>
+                <button onClick={() => { setShowConfirmStop(false); performStop(); }} className="flex-1 py-4 bg-red-600 rounded-full font-bold text-white">Stop</button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       
       {/* Map Area */}
       <div className="absolute inset-0 md:relative md:flex-1 z-0">
@@ -387,7 +425,7 @@ export default function Activity() {
               )}
               <div className="text-center mb-10">
                 <p className="text-gray-400 font-medium tracking-widest uppercase text-sm mb-2">
-                  {workoutState === 'finished' ? 'Total Distance' : 'Distance'}
+                  {workoutState === 'finished' ? 'Workout Summary' : 'Distance'}
                 </p>
                 <div className="flex items-baseline justify-center gap-1">
                   <span className="font-display font-bold text-7xl tracking-tighter text-white">{distance.toFixed(2)}</span>
@@ -395,18 +433,27 @@ export default function Activity() {
                 </div>
               </div>
 
-              <div className="flex justify-between px-6">
-                <div className="text-center">
-                  <p className="text-gray-400 font-medium tracking-widest uppercase text-xs mb-1">Time</p>
-                  <span className="font-display font-medium text-3xl text-white">{formatTime(time)}</span>
+              <div className="grid grid-cols-2 gap-4 px-6 md:grid-cols-2">
+                <div className="text-center bg-[#111] p-4 rounded-2xl">
+                  <p className="text-gray-500 font-medium tracking-widest uppercase text-[10px] mb-1">Time</p>
+                  <span className="font-display font-medium text-xl text-white">{formatTime(time)}</span>
                 </div>
-                <div className="w-px h-12 bg-[#222]"></div>
-                <div className="text-center">
-                  <p className="text-gray-400 font-medium tracking-widest uppercase text-xs mb-1">
-                    {workoutState === 'finished' ? 'Avg Pace' : 'Pace'}
-                  </p>
-                  <span className="font-display font-medium text-3xl text-white">{PaceFormatted}</span>
+                <div className="text-center bg-[#111] p-4 rounded-2xl">
+                  <p className="text-gray-500 font-medium tracking-widest uppercase text-[10px] mb-1">Avg Pace</p>
+                  <span className="font-display font-medium text-xl text-white">{PaceFormatted}</span>
                 </div>
+                {workoutState === 'finished' && (
+                   <>
+                    <div className="text-center bg-[#111] p-4 rounded-2xl">
+                      <p className="text-gray-500 font-medium tracking-widest uppercase text-[10px] mb-1">Calories</p>
+                      <span className="font-display font-medium text-xl text-white">{Math.floor(distance * 60)}</span>
+                    </div>
+                    <div className="text-center bg-[#111] p-4 rounded-2xl">
+                        <p className="text-gray-500 font-medium tracking-widest uppercase text-[10px] mb-1">Type</p>
+                        <span className="font-display font-medium text-xl text-white capitalize">{activityType}</span>
+                    </div>
+                   </>
+                )}
               </div>
             </div>
           )}

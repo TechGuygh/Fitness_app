@@ -1,0 +1,8 @@
+{
+  "name": "Run Tracker",
+  "short_name": "RunTrack",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000"
+}

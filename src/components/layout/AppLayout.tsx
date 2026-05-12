@@ -1,3 +1,4 @@
+import React from 'react';
 import { NavLink, Outlet, useLocation, Navigate } from "react-router-dom";
 import { Home, Activity, Users, User, PlusCircle } from "lucide-react";
 import { cn } from "@/src/lib/utils";
@@ -83,29 +84,32 @@ export default function AppLayout() {
         </main>
 
         {/* Mobile Bottom Nav */}
-        <nav className="md:hidden fixed bottom-0 inset-x-0 h-20 bg-black/90 backdrop-blur-xl border-t border-[#222] z-50 px-6 pb-safe">
-          <div className="flex h-full items-center justify-between">
-            {navItems.map((item) => {
+        <nav className="md:hidden fixed bottom-0 inset-x-0 h-20 bg-black/90 backdrop-blur-xl border-t border-[#222] z-50">
+          <div className="flex h-full items-center justify-around px-2 relative">
+            {navItems.filter(item => !item.primary).map((item, idx) => {
               const isActive = location.pathname === item.path;
-              if (item.primary) {
-                return (
+              // Add a spacer in the middle for the action button
+              if (idx === 1) return (
+                <React.Fragment key={item.path}>
                   <NavLink
-                    key={item.path}
                     to={item.path}
-                    className="relative -top-6 flex items-center justify-center"
+                    className={cn(
+                      "flex flex-col items-center justify-center w-16 gap-1 transition-colors",
+                      isActive ? "text-brand-400" : "text-gray-500 hover:text-gray-300"
+                    )}
                   >
-                    <div className="w-16 h-16 rounded-full bg-brand-500 flex items-center justify-center shadow-[0_0_30px_rgba(34,197,94,0.3)] border-4 border-black transition-transform active:scale-95">
-                      <PlusCircle className="w-8 h-8 text-black" strokeWidth={2.5} />
-                    </div>
+                    <item.icon className="w-6 h-6" strokeWidth={isActive ? 2.5 : 2} />
+                    <span className="text-[10px] font-medium">{item.label}</span>
                   </NavLink>
-                );
-              }
+                  <div className="w-16" />
+                </React.Fragment>
+              );
               return (
                 <NavLink
                   key={item.path}
                   to={item.path}
                   className={cn(
-                    "flex flex-col items-center justify-center w-12 gap-1 transition-colors",
+                    "flex flex-col items-center justify-center w-16 gap-1 transition-colors",
                     isActive ? "text-brand-400" : "text-gray-500 hover:text-gray-300"
                   )}
                 >
@@ -115,6 +119,19 @@ export default function AppLayout() {
               );
             })}
           </div>
+          
+          {/* Centered Action Button */}
+          {navItems.filter(item => item.primary).map((item) => (
+             <NavLink
+              key={item.path}
+              to={item.path}
+              className="absolute left-1/2 -translate-x-1/2 -top-6 flex items-center justify-center shadow-lg"
+             >
+                <div className="w-16 h-16 rounded-full bg-brand-500 flex items-center justify-center shadow-[0_0_30px_rgba(34,197,94,0.3)] border-4 border-black transition-transform active:scale-95">
+                  <PlusCircle className="w-8 h-8 text-black" strokeWidth={2.5} />
+                </div>
+            </NavLink>
+          ))}
         </nav>
       </div>
     </div>

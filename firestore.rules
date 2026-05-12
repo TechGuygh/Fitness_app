@@ -97,15 +97,15 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow get: if isSignedIn() && isValidId(userId);
-      allow list: if false; 
+      allow list: if isSignedIn();
       allow create: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidUserCreate(incoming());
       allow update: if isSignedIn() && request.auth.uid == userId && isValidId(userId) &&
                     incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'level', 'totalKm', 'activeHours', 'calories']);
     }
 
     match /activities/{activityId} {
-      allow get: if isSignedIn() && isValidId(activityId) && existing().userId == request.auth.uid;
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(activityId);
+      allow list: if isSignedIn();
       allow create: if isSignedIn() && isValidId(activityId) && isValidActivityCreate(incoming());
       allow update: if (
         isSignedIn() && isValidId(activityId) && (

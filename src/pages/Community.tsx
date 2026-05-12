@@ -8,7 +8,7 @@ import { useAuth } from "@/src/components/auth/AuthProvider";
 import { handleFirestoreError, OperationType } from "@/src/lib/firebase-error";
 import { format } from "date-fns";
 
-const TABS = ["Feed", "Challenges", "Chat"];
+const TABS = ["Feed", "Challenges", "Chat", "Leaderboard"];
 
 export default function Community() {
   const [activeTab, setActiveTab] = useState("Feed");
@@ -17,6 +17,7 @@ export default function Community() {
   const [feedPosts, setFeedPosts] = useState<any[]>([]);
   const [challenges, setChallenges] = useState<any[]>([]);
   const [messages, setMessages] = useState<any[]>([]);
+  const [activities, setActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Form states
@@ -45,6 +46,7 @@ export default function Community() {
     if (!user) return;
 
     let unsubMessages: () => void = () => {};
+    let unsubActsGlobal: () => void = () => {};
 
     async function fetchData() {
       setLoading(true);
@@ -123,8 +125,13 @@ export default function Community() {
         const qChal = query(collection(db, "challenges"), orderBy("createdAt", "desc"));
         const snapChal = await getDocs(qChal);
         setChallenges(snapChal.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      } catch (error) {
-        handleFirestoreError(error, OperationType.LIST, "community");
+      } catch (error: any) {
+        if (error.message.includes("users")) handleFirestoreError(error, OperationType.LIST, "users");
+        else if (error.message.includes("posts")) handleFirestoreError(error, OperationType.LIST, "posts");
+        else if (error.message.includes("activities")) handleFirestoreError(error, OperationType.LIST, "activities");
+        else if (error.message.includes("follows")) handleFirestoreError(error, OperationType.LIST, "follows");
+        else if (error.message.includes("challenges")) handleFirestoreError(error, OperationType.LIST, "challenges");
+        else handleFirestoreError(error, OperationType.LIST, "community-aggregated");
       } finally {
         setLoading(false);
       }
@@ -137,11 +144,30 @@ export default function Community() {
     unsubMessages = onSnapshot(qMsgs, (snap) => {
       setMessages(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (error) => handleFirestoreError(error, OperationType.LIST, "messages"));
+    
+    // Listen to activities for leaderboard
+    const qActsGlobal = query(collection(db, "activities"));
+    unsubActsGlobal = onSnapshot(qActsGlobal, (snap) => {
+        setActivities(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, "activities"));
 
     return () => {
       unsubMessages();
+      unsubActsGlobal();
     };
   }, [user]);
+
+  const leaderboardData = () => {
+    // Basic calculation for prototype
+    const userStats: Record<string, { name: string, avatar: string, distance: number }> = {};
+    activities.forEach(act => {
+        if (!userStats[act.userId]) {
+            userStats[act.userId] = { name: act.userName || "Athlete", avatar: act.userAvatar || "", distance: 0 };
+        }
+        userStats[act.userId].distance += act.distance || 0;
+    });                
+    return Object.entries(userStats).sort((a, b) => b[1].distance - a[1].distance);
+  };
 
   const toggleComments = async (postId: string) => {
     if (expandedComments === postId) {
@@ -613,6 +639,20 @@ export default function Community() {
               </div>
             </div>
           </div>
+        )}
+        
+        {activeTab === "Leaderboard" && (                
+          <div className="bg-[#111] border border-[#222] rounded-3xl p-6 min-h-[400px]">
+             <h3 className="text-white font-display font-bold text-xl mb-6">Top Athletes</h3>
+             {leaderboardData().map(([uid, stats], i) => (
+                 <div key={uid} className="flex items-center gap-4 mb-4 p-3 bg-[#222] rounded-xl">
+                    <span className="font-bold text-gray-500 w-6">#{i + 1}</span>
+                    <img src={stats.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${stats.name}`} className="w-10 h-10 rounded-full" />
+                    <span className="text-white font-semibold flex-1">{stats.name}</span>
+                    <span className="text-brand-500 font-bold">{stats.distance.toFixed(1)} km</span>
+                 </div>
+             ))}
+          </div>                
         )}
       </div>
 
