@@ -1,14 +1,15 @@
 import React from 'react';
 import { NavLink, Outlet, useLocation, Navigate } from "react-router-dom";
-import { Home, Activity, Users, User, PlusCircle } from "lucide-react";
+import { Home, Activity, Users, User, MessageSquare } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { useAuth } from "@/src/components/auth/AuthProvider";
 import { motion } from "framer-motion";
 
 const navItems = [
   { icon: Home, label: "Home", path: "/" },
-  { icon: Activity, label: "Track", path: "/activity", primary: true },
+  { icon: Activity, label: "Track", path: "/activity" },
   { icon: Users, label: "Community", path: "/community" },
+  { icon: MessageSquare, label: "Messages", path: "/messages" },
   { icon: User, label: "Profile", path: "/profile" },
 ];
 
@@ -36,21 +37,21 @@ export default function AppLayout() {
               AERO
             </h1>
           </div>
-          <nav className="flex-1 px-4 space-y-2 mt-8">
+          <nav className="flex-1 px-4 space-y-1 mt-8">
             {navItems.map((item) => (
               <NavLink
                 key={item.path}
                 to={item.path}
                 className={({ isActive }) =>
                   cn(
-                    "flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-300 font-medium",
+                    "flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-300 font-bold text-sm",
                     isActive
-                      ? "bg-brand-500/10 text-brand-400"
-                      : "text-gray-400 hover:text-white hover:bg-[#1a1a1a]"
+                      ? "bg-brand-500 text-black shadow-[0_0_20px_rgba(204,255,0,0.2)]"
+                      : "text-gray-500 hover:text-white hover:bg-[#1a1a1a]"
                   )
                 }
               >
-                <item.icon className={cn("w-5 h-5", item.primary && "text-brand-400")} />
+                <item.icon className="w-5 h-5" />
                 {item.label}
               </NavLink>
             ))}
@@ -85,53 +86,24 @@ export default function AppLayout() {
 
         {/* Mobile Bottom Nav */}
         <nav className="md:hidden fixed bottom-0 inset-x-0 h-20 bg-black/90 backdrop-blur-xl border-t border-[#222] z-50">
-          <div className="flex h-full items-center justify-around px-2 relative">
-            {navItems.filter(item => !item.primary).map((item, idx) => {
+          <div className="flex h-full items-center justify-around px-2 relative px-4">
+            {navItems.map((item) => {
               const isActive = location.pathname === item.path;
-              // Add a spacer in the middle for the action button
-              if (idx === 1) return (
-                <React.Fragment key={item.path}>
-                  <NavLink
-                    to={item.path}
-                    className={cn(
-                      "flex flex-col items-center justify-center w-16 gap-1 transition-colors",
-                      isActive ? "text-brand-400" : "text-gray-500 hover:text-gray-300"
-                    )}
-                  >
-                    <item.icon className="w-6 h-6" strokeWidth={isActive ? 2.5 : 2} />
-                    <span className="text-[10px] font-medium">{item.label}</span>
-                  </NavLink>
-                  <div className="w-16" />
-                </React.Fragment>
-              );
               return (
                 <NavLink
                   key={item.path}
                   to={item.path}
                   className={cn(
-                    "flex flex-col items-center justify-center w-16 gap-1 transition-colors",
-                    isActive ? "text-brand-400" : "text-gray-500 hover:text-gray-300"
+                    "flex flex-col items-center justify-center gap-1 transition-all duration-300",
+                    isActive ? "text-brand-500 scale-110" : "text-gray-500 hover:text-gray-300"
                   )}
                 >
                   <item.icon className="w-6 h-6" strokeWidth={isActive ? 2.5 : 2} />
-                  <span className="text-[10px] font-medium">{item.label}</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest">{item.label}</span>
                 </NavLink>
               );
             })}
           </div>
-          
-          {/* Centered Action Button */}
-          {navItems.filter(item => item.primary).map((item) => (
-             <NavLink
-              key={item.path}
-              to={item.path}
-              className="absolute left-1/2 -translate-x-1/2 -top-6 flex items-center justify-center shadow-lg"
-             >
-                <div className="w-16 h-16 rounded-full bg-brand-500 flex items-center justify-center shadow-[0_0_30px_rgba(34,197,94,0.3)] border-4 border-black transition-transform active:scale-95">
-                  <PlusCircle className="w-8 h-8 text-black" strokeWidth={2.5} />
-                </div>
-            </NavLink>
-          ))}
         </nav>
       </div>
     </div>

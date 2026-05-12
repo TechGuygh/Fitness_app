@@ -8,6 +8,7 @@ import { handleFirestoreError, OperationType } from "@/src/lib/firebase-error";
 import { format } from "date-fns";
 import { uploadBytes, getDownloadURL, ref } from "firebase/storage";
 import { updateProfile } from "firebase/auth";
+import { formatDistance } from "@/src/lib/utils";
 
 const BADGES = [
   { id: 1, name: "Early Bird", desc: "5 runs before 6 AM", icon: "🌅", unlocked: true },
@@ -191,8 +192,8 @@ export default function Profile() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-[#111] border border-[#222] rounded-2xl p-5">
             <Map className="w-5 h-5 text-brand-400 mb-3" />
-            <p className="text-3xl font-display font-bold text-white mb-1">{stats.totalKm.toFixed(1)}</p>
-            <p className="text-sm text-gray-400 font-medium tracking-wide">Total km</p>
+            <p className="text-3xl font-display font-bold text-white mb-1">{formatDistance(stats.totalKm)}</p>
+            <p className="text-sm text-gray-400 font-medium tracking-wide">Total distance</p>
           </div>
           <div className="bg-[#111] border border-[#222] rounded-2xl p-5">
             <ActivityIcon className="w-5 h-5 text-accent-orange mb-3" />

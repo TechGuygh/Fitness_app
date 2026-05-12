@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Heart, MessageCircle, Share2, Trophy, Users, Send, UserPlus, UserCheck, PlusCircle, Bell, Check } from "lucide-react";
+import { Heart, MessageCircle, Share2, Trophy, Users, Send, UserPlus, UserCheck, PlusCircle, Bell, Check, Edit, Trash2, X } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { collection, query, where, orderBy, getDocs, setDoc, doc, serverTimestamp, onSnapshot, updateDoc, increment, deleteDoc, arrayUnion, arrayRemove } from "firebase/firestore";
@@ -8,9 +8,10 @@ import { useAuth } from "@/src/components/auth/AuthProvider";
 import { handleFirestoreError, OperationType } from "@/src/lib/firebase-error";
 import { format } from "date-fns";
 import { useNavigate } from "react-router-dom";
+import { formatDistance } from "@/src/lib/utils";
 import RouteCreatorModal from "@/src/components/RouteCreatorModal";
 
-const TABS = ["Feed", "Challenges", "Chat", "Leaderboard", "Routes"]; // Added Routes
+const TABS = ["Feed", "Challenges", "Leaderboard", "Routes"];
 
 export default function Community() {
   const [activeTab, setActiveTab] = useState("Feed");
@@ -29,6 +30,8 @@ export default function Community() {
   const [activities, setActivities] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [joinedChallenges, setJoinedChallenges] = useState<Set<string>>(new Set());
+  const [editingChallenge, setEditingChallenge] = useState<any>(null);
   
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -187,6 +190,11 @@ export default function Community() {
        setNotifications(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
+    // 4. Listen to joined challenges
+    const unsubJoined = onSnapshot(query(collection(db, "challengeParticipants"), where("userId", "==", user.uid)), (snap) => {
+       setJoinedChallenges(new Set(snap.docs.map(d => d.data().challengeId)));
+    });
+
     // 4. Other Listeners (Messages, Leaderboard, Challenges, Routes)
     const qMsgs = query(collection(db, "messages"), orderBy("createdAt", "asc"));
     unsubMessages = onSnapshot(qMsgs, (snap) => {
@@ -206,6 +214,7 @@ export default function Community() {
       unsubMessages();
       unsubActsGlobal();
       unsubFollows();
+      unsubJoined();
       if (unsubPosts) unsubPosts();
       if (unsubActsFeed) unsubActsFeed();
       unsubNotifications();
@@ -415,16 +424,51 @@ export default function Community() {
     }
   };
 
-  const handleJoinChallenge = async (challengeId: string, currentParticipants: number) => {
-    if (!user) return;
+  const handleJoinChallenge = async (challengeId: string) => {
+    if (!user || joinedChallenges.has(challengeId)) return;
     try {
+      const participantRef = doc(collection(db, "challengeParticipants"), `${challengeId}_${user.uid}`);
+      await setDoc(participantRef, {
+        userId: user.uid,
+        challengeId: challengeId,
+        joinedAt: serverTimestamp()
+      });
       await updateDoc(doc(db, "challenges", challengeId), {
         participants: increment(1)
       });
-      // Optimistic update
-      setChallenges(prev => prev.map(c => c.id === challengeId ? { ...c, participants: currentParticipants + 1 } : c));
+      
+      const chal = challenges.find(c => c.id === challengeId);
+      if (chal) {
+        createNotification(chal.creatorId, "milestone", `New athlete joined ${chal.title}!`, "activity");
+      }
     } catch(e) {
       handleFirestoreError(e, OperationType.UPDATE, "challenges");
+    }
+  };
+
+  const handleUpdateChallenge = async () => {
+    if (!editingChallenge) return;
+    try {
+      await updateDoc(doc(db, "challenges", editingChallenge.id), {
+        title: editingChallenge.title,
+        goal: editingChallenge.goal,
+        daysLeft: editingChallenge.daysLeft
+      });
+      setChallenges(prev => prev.map(c => c.id === editingChallenge.id ? { ...c, ...editingChallenge } : c));
+      setEditingChallenge(null);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDeleteChallenge = async (id: string) => {
+    if (!user || !confirm("Delete this challenge?")) return;
+    try {
+      await deleteDoc(doc(db, "challenges", id));
+      setChallenges(prev => prev.filter(c => c.id !== id));
+      setEditingChallenge(null);
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -806,6 +850,44 @@ export default function Community() {
 
         {activeTab === "Challenges" && (
           <div className="space-y-4 pb-6">
+            <AnimatePresence>
+               {editingChallenge && (
+                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[1000] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+                    <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} className="bg-[#111] border border-[#222] p-8 rounded-[40px] w-full max-w-md shadow-2xl relative">
+                       <button onClick={() => setEditingChallenge(null)} className="absolute top-6 right-6 text-gray-500 hover:text-white">
+                         <X className="w-6 h-6" />
+                       </button>
+                       <h3 className="text-2xl font-display font-bold text-white mb-2">Manage Challenge</h3>
+                       <p className="text-gray-400 text-sm mb-8">Update your challenge details</p>
+                       
+                       <div className="space-y-4 mb-8">
+                          <div>
+                            <label className="text-[10px] text-gray-500 font-bold uppercase tracking-widest ml-1 mb-1 block">Title</label>
+                            <input value={editingChallenge.title} onChange={e => setEditingChallenge({...editingChallenge, title: e.target.value})} className="w-full bg-[#161616] border border-[#222] rounded-xl px-4 py-3 text-white outline-none focus:ring-1 ring-brand-500" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-gray-500 font-bold uppercase tracking-widest ml-1 mb-1 block">Goal Description</label>
+                            <input value={editingChallenge.goal} onChange={e => setEditingChallenge({...editingChallenge, goal: e.target.value})} className="w-full bg-[#161616] border border-[#222] rounded-xl px-4 py-3 text-white outline-none focus:ring-1 ring-brand-500" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-gray-500 font-bold uppercase tracking-widest ml-1 mb-1 block">Days Left</label>
+                            <input type="number" value={editingChallenge.daysLeft} onChange={e => setEditingChallenge({...editingChallenge, daysLeft: Number(e.target.value)})} className="w-full bg-[#161616] border border-[#222] rounded-xl px-4 py-3 text-white outline-none focus:ring-1 ring-brand-500" />
+                          </div>
+                       </div>
+
+                       <div className="grid grid-cols-2 gap-4">
+                         <button onClick={() => setEditingChallenge(null)} className="py-4 bg-[#222] text-white font-bold rounded-full hover:bg-[#2a2a2a] transition-all">Cancel</button>
+                         <button onClick={handleUpdateChallenge} className="py-4 bg-brand-500 text-black font-bold rounded-full hover:bg-brand-400 transition-all">Save Changes</button>
+                       </div>
+                       
+                       <button onClick={() => handleDeleteChallenge(editingChallenge.id)} className="w-full mt-6 py-2 text-red-500 text-xs font-bold hover:underline flex items-center justify-center gap-2">
+                          <Trash2 className="w-3.5 h-3.5" /> Delete Challenge
+                       </button>
+                    </motion.div>
+                 </motion.div>
+               )}
+            </AnimatePresence>
+
             <div className="bg-[#111] border border-[#222] rounded-3xl p-5 mb-8">
               <h3 className="text-white font-display font-semibold mb-3">Create a Challenge</h3>
               <input type="text" placeholder="Challenge Title (e.g. June 50k)" value={newChallenge.title} onChange={e => setNewChallenge({...newChallenge, title: e.target.value})} className="w-full bg-[#222] border border-[#333] rounded-lg px-3 py-2 text-white text-sm outline-none mb-3" />
@@ -818,155 +900,70 @@ export default function Community() {
                   No active challenges right now. Be the first to create one!
                </div>
             ) : (
-                challenges.map((challenge, i) => (
-                  <motion.div key={challenge.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-[#111] border border-[#222] rounded-3xl p-5 relative overflow-hidden group cursor-pointer hover:border-[#333] transition-colors">
-                    <div className={cn("absolute right-0 top-0 w-32 h-32 blur-3xl opacity-20 rounded-full bg-gradient-to-br", challenge.color)} />
-                    <div className="relative z-10">
-                      <div className="flex justify-between items-start mb-2">
-                        <h3 className="font-display font-bold text-xl text-white">{challenge.title}</h3>
-                        <Trophy className="w-6 h-6 text-yellow-500" />
-                      </div>
-                      <p className="text-sm text-gray-400 mb-6">{challenge.goal}</p>
-                      
-                      <div className="mb-2 flex justify-between text-xs font-semibold">
-                        <span className="text-brand-400">{challenge.progress}% Complete</span>
-                        <span className="text-gray-500">{challenge.daysLeft} days left</span>
-                      </div>
-                      <div className="h-2 w-full bg-[#222] rounded-full overflow-hidden mb-4">
-                        <div className={cn("h-full bg-gradient-to-r", challenge.color)} style={{ width: `${challenge.progress}%` }}></div>
-                      </div>
-
-                      <div className="flex items-center justify-between mt-4 border-t border-[#222] pt-4">
-                        <div className="flex items-center gap-2 text-xs font-medium text-gray-400">
-                          <Users className="w-4 h-4" />
-                          {challenge.participants} joined
+                challenges.map((challenge, i) => {
+                  const isOwner = challenge.creatorId === user.uid;
+                  const hasJoined = joinedChallenges.has(challenge.id) || isOwner;
+                  
+                  return (
+                    <motion.div key={challenge.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-[#111] border border-[#222] rounded-3xl p-5 relative overflow-hidden group cursor-pointer hover:border-[#333] transition-colors">
+                      <div className={cn("absolute right-0 top-0 w-32 h-32 blur-3xl opacity-20 rounded-full bg-gradient-to-br", challenge.color || "from-brand-500 to-accent-blue")} />
+                      <div className="relative z-10">
+                        <div className="flex justify-between items-start mb-2">
+                          <h3 className="font-display font-bold text-xl text-white">{challenge.title}</h3>
+                          <Trophy className="w-6 h-6 text-yellow-500" />
                         </div>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if(challenge.creatorId !== user.uid) {
-                               if (challenge.progress > 0) {
-                                 // Already joined, maybe do nothing or allow progress check
-                               } else {
-                                 handleJoinChallenge(challenge.id, challenge.participants);
-                                 // Also give initial progress for demo
-                                 handleUpdateChallengeProgress(challenge.id);
-                               }
-                            }
-                          }}
-                          className="text-sm font-semibold bg-white text-black px-4 py-1.5 rounded-lg hover:bg-gray-200 transition-colors"
-                        >
-                          {challenge.creatorId === user.uid ? (
-                            'Manage'
-                          ) : challenge.progress > 0 ? (
-                            <div className="flex gap-2">
-                              {challenge.progress < 100 && (
-                                <button 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleUpdateChallengeProgress(challenge.id);
-                                  }}
-                                  className="text-[10px] font-bold bg-brand-500 text-black px-2 py-1 rounded hover:bg-brand-400"
-                                >
-                                  +20%
-                                </button>
-                              )}
-                              <span className="text-gray-400">Joined</span>
-                            </div>
+                        <p className="text-sm text-gray-400 mb-6">{challenge.goal}</p>
+                        
+                        <div className="mb-2 flex justify-between text-xs font-semibold">
+                          <span className="text-brand-400">{challenge.progress || 0}% Complete</span>
+                          <span className="text-gray-500">{challenge.daysLeft} days left</span>
+                        </div>
+                        <div className="h-2 w-full bg-[#222] rounded-full overflow-hidden mb-4">
+                          <div className={cn("h-full bg-gradient-to-r", challenge.color || "from-brand-500 to-accent-blue")} style={{ width: `${challenge.progress || 0}%` }}></div>
+                        </div>
+
+                        <div className="flex items-center justify-between mt-4 border-t border-[#222] pt-4">
+                          <div className="flex items-center gap-2 text-xs font-medium text-gray-400">
+                            <Users className="w-4 h-4" />
+                            {challenge.participants || 0} joined
+                          </div>
+                          
+                          {isOwner ? (
+                             <button 
+                               onClick={(e) => { e.stopPropagation(); setEditingChallenge(challenge); }}
+                               className="text-sm font-semibold bg-[#222] text-white px-4 py-1.5 rounded-lg hover:bg-[#333] transition-colors flex items-center gap-2"
+                             >
+                               <Edit className="w-3.5 h-3.5" /> Manage
+                             </button>
                           ) : (
-                            'Join'
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleJoinChallenge(challenge.id);
+                              }}
+                              disabled={hasJoined}
+                              className={cn(
+                                "text-sm font-semibold px-4 py-1.5 rounded-lg transition-colors",
+                                hasJoined ? "bg-[#222] text-gray-500 cursor-default" : "bg-white text-black hover:bg-gray-200"
+                              )}
+                            >
+                              {hasJoined ? (
+                                <div className="flex items-center gap-1.5">
+                                  <Check className="w-4 h-4" /> Joined
+                                </div>
+                              ) : 'Join'}
+                            </button>
                           )}
-                        </button>
+                        </div>
                       </div>
-                    </div>
-                  </motion.div>
-                ))
+                    </motion.div>
+                  );
+                })
             )}
           </div>
         )}
 
-        {activeTab === "Chat" && (
-          <div className="flex h-full bg-[#111] border border-[#222] rounded-3xl overflow-hidden min-h-[400px]">
-            {/* User List */}
-            <div className="w-1/3 border-r border-[#222] p-2 overflow-y-auto bg-[#0a0a0a]">
-              <div className="p-2 mb-4 bg-[#161616] rounded-xl border border-[#222]">
-                 <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest px-2 mb-2">Channels</p>
-                 <button 
-                   onClick={() => setSelectedUser(null)}
-                   className={cn("w-full flex items-center gap-2 p-3 rounded-xl text-sm font-bold transition-all", selectedUser === null ? "bg-brand-500 text-black shadow-[0_0_20px_rgba(204,255,0,0.2)]" : "text-gray-400 hover:text-white hover:bg-[#222]")}
-                 >
-                   <Users className="w-4 h-4" />
-                   Global
-                 </button>
-              </div>
-              
-              <div className="px-2 mb-2">
-                 <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest px-2">Direct Messages</p>
-              </div>
-
-              <div className="space-y-1">
-                {users.map(u => (
-                  <button 
-                    key={u.id}
-                    onClick={() => setSelectedUser(u.id)}
-                    className={cn("w-full flex items-center gap-3 p-3 rounded-xl text-sm transition-all group", selectedUser === u.id ? "bg-[#222] text-white border border-[#333]" : "text-gray-400 hover:text-white hover:bg-[#161616]")}
-                  >
-                    <div className="relative">
-                      <img src={u.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.displayName}`} className="w-8 h-8 rounded-full border border-[#222]" />
-                      <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 border-2 border-[#111] rounded-full" />
-                    </div>
-                    <div className="flex-1 text-left min-w-0">
-                      <p className="font-bold truncate">{u.displayName}</p>
-                      <p className="text-[10px] text-gray-500 truncate">Athlete</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Chat Area */}
-            <div className="flex-1 flex flex-col">
-              <div className="p-4 border-b border-[#222] bg-[#161616] shrink-0">
-                <p className="text-center font-display font-semibold text-gray-300">
-                  {selectedUser ? users.find(u => u.id === selectedUser)?.displayName : "Global Runners Chat"}
-                </p>
-              </div>
-              
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {messages
-                  .filter(m => selectedUser ? (m.from === selectedUser && m.to === user.uid) || (m.from === user.uid && m.to === selectedUser) : !m.to)
-                  .map(msg => (
-                  <div key={msg.id} className={cn("flex gap-3", msg.userId === user.uid ? "flex-row-reverse" : "flex-row")}>
-                    <img src={msg.userAvatar} className="w-8 h-8 rounded-full shrink-0" alt="avatar" />
-                    <div className={cn("flex flex-col", msg.userId === user.uid ? "items-end" : "items-start")}>
-                      <span className="text-[10px] text-gray-500 mb-1 mx-1">{msg.userName}</span>
-                      <div className={cn("px-4 py-2 rounded-2xl max-w-[240px] md:max-w-md text-sm", msg.userId === user.uid ? "bg-brand-500 text-black rounded-tr-sm" : "bg-[#222] text-white rounded-tl-sm")}>
-                        {msg.text}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                <div ref={chatEndRef} />
-              </div>
-
-              <div className="p-3 border-t border-[#222] bg-[#161616] shrink-0">
-                 <div className="flex items-center gap-2 bg-[#222] rounded-full p-1 pl-4">
-                    <input 
-                      type="text" 
-                      placeholder={selectedUser ? `Message ${users.find(u => u.id === selectedUser)?.displayName}...` : "Type a message..."} 
-                      className="flex-1 bg-transparent border-none outline-none text-white text-sm"
-                      value={newMessage}
-                      onChange={(e) => setNewMessage(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                    />
-                    <button onClick={handleSendMessage} className="w-8 h-8 rounded-full bg-brand-500 flex items-center justify-center shrink-0 hover:bg-brand-400">
-                      <Send className="w-4 h-4 text-black" />
-                    </button>
-                 </div>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Chat area removed - moved to separate Messages page */}
         
         {activeTab === "Leaderboard" && (                
           <div className="bg-[#111] border border-[#222] rounded-3xl p-6 min-h-[400px]">
@@ -976,7 +973,7 @@ export default function Community() {
                     <span className="font-bold text-gray-500 w-6">#{i + 1}</span>
                     <img src={stats.avatar} className="w-10 h-10 rounded-full" />
                     <span className="text-white font-semibold flex-1">{stats.name}</span>
-                    <span className="text-brand-500 font-bold">{stats.distance.toFixed(1)} km</span>
+                    <span className="text-brand-500 font-bold">{formatDistance(stats.distance)}</span>
                  </div>
              ))}
           </div>                
