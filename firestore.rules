@@ -143,8 +143,16 @@ service cloud.firestore {
     }
 
     match /messages/{messageId} {
-      allow get: if isSignedIn() && isValidId(messageId);
-      allow list: if isSignedIn();
+      allow get: if isSignedIn() && isValidId(messageId) && (
+        !existing().keys().hasAny(['to']) || 
+        existing().to == request.auth.uid || 
+        existing().from == request.auth.uid
+      );
+      allow list: if isSignedIn() && (
+        !resource.data.keys().hasAny(['to']) || 
+        resource.data.to == request.auth.uid || 
+        resource.data.from == request.auth.uid
+      );
       allow create: if isSignedIn() && isValidId(messageId) && isValidMessageCreate(incoming());
     }
 

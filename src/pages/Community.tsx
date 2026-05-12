@@ -382,6 +382,39 @@ export default function Community() {
     }
   };
 
+  const handleUpdateChallengeProgress = async (challengeId: string) => {
+    if (!user) return;
+    const challenge = challenges.find(c => c.id === challengeId);
+    if (!challenge) return;
+    
+    // Increment progress by 20%
+    const currentProgress = challenge.progress || 0;
+    const newProgress = Math.min(100, currentProgress + 20);
+    
+    if (newProgress === currentProgress) return;
+
+    try {
+      await updateDoc(doc(db, "challenges", challengeId), {
+        progress: newProgress
+      });
+      
+      // Optimistic update
+      setChallenges(prev => prev.map(c => c.id === challengeId ? { ...c, progress: newProgress } : c));
+      
+      if (newProgress === 100 && currentProgress < 100) {
+        // Trigger notification for completion
+        await createNotification(
+          user.uid, 
+          "milestone", 
+          `Challenge Completed: ${challenge.title}! 🏆`, 
+          "activity"
+        );
+      }
+    } catch(e) {
+      handleFirestoreError(e, OperationType.UPDATE, "challenges");
+    }
+  };
+
   const handleJoinChallenge = async (challengeId: string, currentParticipants: number) => {
     if (!user) return;
     try {
@@ -489,6 +522,8 @@ export default function Community() {
       if (selectedUser) {
         msg.from = user.uid;
         msg.to = selectedUser;
+        // Trigger notification for DM
+        createNotification(selectedUser, "message", ref.id, "chat");
       }
       await setDoc(ref, msg);
       setNewMessage("");
@@ -549,7 +584,23 @@ export default function Community() {
                            <div className="p-8 text-center text-gray-500 text-sm">No notifications yet</div>
                         ) : (
                            notifications.map(notif => (
-                              <div key={notif.id} className={cn("p-3 rounded-2xl flex gap-3 mb-1 transition-colors", notif.read ? "opacity-100" : "bg-[#222]")}>
+                              <div 
+                                key={notif.id} 
+                                className={cn("p-3 rounded-2xl flex gap-3 mb-1 transition-colors cursor-pointer hover:bg-[#1a1a1a]", notif.read ? "opacity-100" : "bg-[#222]")}
+                                onClick={() => {
+                                  if (notif.type === 'message') {
+                                    setActiveTab("Chat");
+                                    setSelectedUser(notif.fromUserId);
+                                    setShowNotifications(false);
+                                  } else if (notif.type === 'follow') {
+                                    // Maybe navigate to profile? For now just close
+                                    setShowNotifications(false);
+                                  } else {
+                                    setActiveTab("Feed");
+                                    setShowNotifications(false);
+                                  }
+                                }}
+                              >
                                  <img src={notif.fromUserAvatar} className="w-10 h-10 rounded-full shrink-0" />
                                  <div className="flex-1">
                                     <p className="text-sm text-gray-200">
@@ -558,6 +609,7 @@ export default function Community() {
                                        {notif.type === 'comment' && " commented on your post"}
                                        {notif.type === 'follow' && " started following you"}
                                        {notif.type === 'milestone' && ` reached a milestone: ${notif.targetId}`}
+                                       {notif.type === 'message' && " sent you a direct message"}
                                     </p>
                                     <p className="text-[10px] text-gray-500 mt-1 uppercase font-bold tracking-wider">
                                        {notif.createdAt?.toDate ? format(notif.createdAt.toDate(), "MMM d, h:mm a") : "Just now"}
@@ -793,12 +845,37 @@ export default function Community() {
                           onClick={(e) => {
                             e.stopPropagation();
                             if(challenge.creatorId !== user.uid) {
-                               handleJoinChallenge(challenge.id, challenge.participants);
+                               if (challenge.progress > 0) {
+                                 // Already joined, maybe do nothing or allow progress check
+                               } else {
+                                 handleJoinChallenge(challenge.id, challenge.participants);
+                                 // Also give initial progress for demo
+                                 handleUpdateChallengeProgress(challenge.id);
+                               }
                             }
                           }}
                           className="text-sm font-semibold bg-white text-black px-4 py-1.5 rounded-lg hover:bg-gray-200 transition-colors"
                         >
-                          {challenge.creatorId === user.uid ? 'Manage' : 'Join'}
+                          {challenge.creatorId === user.uid ? (
+                            'Manage'
+                          ) : challenge.progress > 0 ? (
+                            <div className="flex gap-2">
+                              {challenge.progress < 100 && (
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleUpdateChallengeProgress(challenge.id);
+                                  }}
+                                  className="text-[10px] font-bold bg-brand-500 text-black px-2 py-1 rounded hover:bg-brand-400"
+                                >
+                                  +20%
+                                </button>
+                              )}
+                              <span className="text-gray-400">Joined</span>
+                            </div>
+                          ) : (
+                            'Join'
+                          )}
                         </button>
                       </div>
                     </div>
@@ -811,23 +888,40 @@ export default function Community() {
         {activeTab === "Chat" && (
           <div className="flex h-full bg-[#111] border border-[#222] rounded-3xl overflow-hidden min-h-[400px]">
             {/* User List */}
-            <div className="w-1/3 border-r border-[#222] p-2 overflow-y-auto">
-              <button 
-                onClick={() => setSelectedUser(null)}
-                className={cn("w-full text-left p-2 rounded-lg text-sm font-semibold mb-2", selectedUser === null ? "bg-[#222] text-white" : "text-gray-500")}
-              >
-                Global Chat
-              </button>
-              {users.map(u => (
-                <button 
-                  key={u.id}
-                  onClick={() => setSelectedUser(u.id)}
-                  className={cn("w-full flex items-center gap-2 p-2 rounded-lg text-sm", selectedUser === u.id ? "bg-[#222] text-white" : "text-gray-400 hover:text-white")}
-                >
-                  <img src={u.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.displayName}`} className="w-6 h-6 rounded-full" />
-                  {u.displayName}
-                </button>
-              ))}
+            <div className="w-1/3 border-r border-[#222] p-2 overflow-y-auto bg-[#0a0a0a]">
+              <div className="p-2 mb-4 bg-[#161616] rounded-xl border border-[#222]">
+                 <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest px-2 mb-2">Channels</p>
+                 <button 
+                   onClick={() => setSelectedUser(null)}
+                   className={cn("w-full flex items-center gap-2 p-3 rounded-xl text-sm font-bold transition-all", selectedUser === null ? "bg-brand-500 text-black shadow-[0_0_20px_rgba(204,255,0,0.2)]" : "text-gray-400 hover:text-white hover:bg-[#222]")}
+                 >
+                   <Users className="w-4 h-4" />
+                   Global
+                 </button>
+              </div>
+              
+              <div className="px-2 mb-2">
+                 <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest px-2">Direct Messages</p>
+              </div>
+
+              <div className="space-y-1">
+                {users.map(u => (
+                  <button 
+                    key={u.id}
+                    onClick={() => setSelectedUser(u.id)}
+                    className={cn("w-full flex items-center gap-3 p-3 rounded-xl text-sm transition-all group", selectedUser === u.id ? "bg-[#222] text-white border border-[#333]" : "text-gray-400 hover:text-white hover:bg-[#161616]")}
+                  >
+                    <div className="relative">
+                      <img src={u.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.displayName}`} className="w-8 h-8 rounded-full border border-[#222]" />
+                      <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 border-2 border-[#111] rounded-full" />
+                    </div>
+                    <div className="flex-1 text-left min-w-0">
+                      <p className="font-bold truncate">{u.displayName}</p>
+                      <p className="text-[10px] text-gray-500 truncate">Athlete</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Chat Area */}
