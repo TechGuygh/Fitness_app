@@ -24,6 +24,7 @@ export default function Dashboard() {
   const [activities, setActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
+  const [savingGoal, setSavingGoal] = useState(false);
   const [weeklyGoal, setWeeklyGoal] = useState<WeeklyGoal>({ type: 'distance', target: 30 });
 
   useEffect(() => {
@@ -58,12 +59,16 @@ export default function Dashboard() {
 
   const updateGoal = async (newGoal: WeeklyGoal) => {
     if (!user) return;
+    setSavingGoal(true);
     try {
       await setDoc(doc(db, "goals", user.uid), newGoal);
       setWeeklyGoal(newGoal);
       setIsGoalModalOpen(false);
     } catch (e) {
       console.error(e);
+      handleFirestoreError(e, OperationType.WRITE, `goals/${user.uid}`);
+    } finally {
+      setSavingGoal(false);
     }
   };
 
@@ -211,9 +216,14 @@ export default function Dashboard() {
 
                 <button 
                   onClick={() => updateGoal(weeklyGoal)}
-                  className="w-full py-5 bg-brand-500 text-black font-display font-bold text-lg rounded-full hover:bg-brand-400 transition-all shadow-[0_10px_30px_rgba(204,255,0,0.2)]"
+                  disabled={savingGoal}
+                  className="w-full py-5 bg-brand-500 text-black font-display font-bold text-lg rounded-full hover:bg-brand-400 transition-all shadow-[0_10px_30px_rgba(204,255,0,0.2)] disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  SAVE GOAL
+                  {savingGoal ? (
+                    <div className="w-6 h-6 rounded-full border-2 border-black border-t-transparent animate-spin"></div>
+                  ) : (
+                    "SAVE GOAL"
+                  )}
                 </button>
              </motion.div>
           </motion.div>

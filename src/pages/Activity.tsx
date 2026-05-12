@@ -146,6 +146,43 @@ export default function Activity() {
   const ghostId = searchParams.get('ghostId');
   
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [loadingSettings, setLoadingSettings] = useState(true);
+
+  useEffect(() => {
+    if (user) {
+      const fetchSettings = async () => {
+        try {
+          const docSnap = await getDoc(doc(db, "settings", user.uid));
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (data.paceThreshold) setPaceThreshold(data.paceThreshold);
+            if (data.distanceThreshold) setDistanceThreshold(data.distanceThreshold);
+          }
+        } catch (e) {
+          console.error("Error fetching settings", e);
+        } finally {
+          setLoadingSettings(false);
+        }
+      };
+      fetchSettings();
+    }
+  }, [user]);
+
+  const saveSettings = async (newPace: number, newDist: number) => {
+    if (!user) return;
+    try {
+      await setDoc(doc(db, "settings", user.uid), {
+        paceThreshold: newPace,
+        distanceThreshold: newDist,
+        updatedAt: serverTimestamp()
+      });
+      setPaceThreshold(newPace);
+      setDistanceThreshold(newDist);
+      setIsSettingsOpen(false);
+    } catch (e) {
+      handleFirestoreError(e, OperationType.WRITE, `settings/${user.uid}`);
+    }
+  };
 
   const triggerHaptics = (type: 'light' | 'medium' | 'heavy') => {
     if (navigator.vibrate) {
@@ -337,9 +374,11 @@ export default function Activity() {
         </AnimatePresence>
 
         <ActivitySettingsModal 
-          isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)}
-          paceThreshold={paceThreshold} setPaceThreshold={setPaceThreshold}
-          distanceThreshold={distanceThreshold} setDistanceThreshold={setDistanceThreshold}
+          isOpen={isSettingsOpen} 
+          onClose={() => setIsSettingsOpen(false)}
+          onSave={saveSettings}
+          paceThreshold={paceThreshold}
+          distanceThreshold={distanceThreshold}
         />
       </div>
 

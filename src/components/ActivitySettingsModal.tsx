@@ -1,25 +1,40 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X } from 'lucide-react';
+import { X, Save } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSave: (pace: number, dist: number) => Promise<void>;
   paceThreshold: number;
-  setPaceThreshold: (val: number) => void;
   distanceThreshold: number;
-  setDistanceThreshold: (val: number) => void;
 }
 
 export default function ActivitySettingsModal({
   isOpen,
   onClose,
+  onSave,
   paceThreshold,
-  setPaceThreshold,
-  distanceThreshold,
-  setDistanceThreshold
+  distanceThreshold
 }: SettingsModalProps) {
+  const [localPace, setLocalPace] = useState(paceThreshold);
+  const [localDist, setLocalDist] = useState(distanceThreshold);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setLocalPace(paceThreshold);
+      setLocalDist(distanceThreshold);
+    }
+  }, [isOpen, paceThreshold, distanceThreshold]);
+
   if (!isOpen) return null;
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onSave(localPace, localDist);
+    setSaving(false);
+  };
 
   return (
     <AnimatePresence>
@@ -48,9 +63,10 @@ export default function ActivitySettingsModal({
                 <label className="text-gray-400 text-sm block mb-2">Pace Alert (min/km)</label>
                 <input 
                   type="number" 
-                  value={paceThreshold} 
-                  onChange={(e) => setPaceThreshold(parseFloat(e.target.value))}
-                  className="w-full p-4 bg-[#222] rounded-xl text-white outline-none"
+                  step="0.1"
+                  value={localPace} 
+                  onChange={(e) => setLocalPace(parseFloat(e.target.value))}
+                  className="w-full p-4 bg-[#222] rounded-xl text-white outline-none border border-transparent focus:border-brand-500 transition-colors"
                 />
               </div>
               
@@ -58,13 +74,27 @@ export default function ActivitySettingsModal({
                 <label className="text-gray-400 text-sm block mb-2">Distance Alert (km)</label>
                 <input 
                   type="number" 
-                  value={distanceThreshold} 
-                  onChange={(e) => setDistanceThreshold(parseFloat(e.target.value))}
-                  className="w-full p-4 bg-[#222] rounded-xl text-white outline-none"
+                  step="0.1"
+                  value={localDist} 
+                  onChange={(e) => setLocalDist(parseFloat(e.target.value))}
+                  className="w-full p-4 bg-[#222] rounded-xl text-white outline-none border border-transparent focus:border-brand-500 transition-colors"
                 />
               </div>
 
-              <button onClick={onClose} className="w-full py-4 bg-brand-500 text-black font-bold rounded-full">Save Changes</button>
+              <button 
+                onClick={handleSave} 
+                disabled={saving}
+                className="w-full py-4 bg-brand-500 text-black font-bold rounded-full flex items-center justify-center gap-2 hover:bg-brand-400 disabled:opacity-50 transition-all"
+              >
+                {saving ? (
+                  <div className="w-5 h-5 rounded-full border-2 border-black border-t-transparent animate-spin"></div>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    Save Settings
+                  </>
+                )}
+              </button>
             </div>
           </motion.div>
         </motion.div>

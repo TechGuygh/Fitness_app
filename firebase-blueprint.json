@@ -136,12 +136,37 @@
         "createdAt": { "type": "number" }
       },
       "required": ["userIds", "createdAt"]
+    },
+    "Goal": {
+      "title": "Weekly Goal",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["distance", "frequency", "calories", "time"] },
+        "target": { "type": "number" }
+      },
+      "required": ["type", "target"]
+    },
+    "Settings": {
+      "title": "User Settings",
+      "type": "object",
+      "properties": {
+        "paceThreshold": { "type": "number" },
+        "distanceThreshold": { "type": "number" }
+      }
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/User" },
       "description": "Master list of users"
+    },
+    "/goals/{userId}": {
+      "schema": { "$ref": "#/entities/Goal" },
+      "description": "User's weekly goals"
+    },
+    "/settings/{userId}": {
+      "schema": { "$ref": "#/entities/Settings" },
+      "description": "User's app settings"
     },
     "/activities/{activityId}": {
       "schema": { "$ref": "#/entities/Activity" },
