@@ -1,13 +1,18 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Play, Pause, Square, MapPin, X, Signal } from "lucide-react";
+import { Play, Pause, Square, MapPin, X, Signal, Settings } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from "react-leaflet";
 import { motion, AnimatePresence } from "framer-motion";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useAuth } from "@/src/components/auth/AuthProvider";
 import { db } from "@/src/lib/firebase";
-import { doc, setDoc, collection, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, collection, serverTimestamp, getDoc } from "firebase/firestore";
 import { handleFirestoreError, OperationType } from "@/src/lib/firebase-error";
+import { useSearchParams } from "react-router-dom";
+import { KalmanFilter } from "@/src/lib/KalmanFilter";
+import ActivitySettingsModal from "@/src/components/ActivitySettingsModal";
+
+// ... (rest of the file as before until watchPosition logic) ...
 
 // Fix Leaflet marker icons with custom ones to avoid Vite import issues
 const createCustomIcon = (color: string) => {
@@ -31,6 +36,7 @@ const createCustomIcon = (color: string) => {
 const startIcon = createCustomIcon("#22c55e");
 const finishIcon = createCustomIcon("#ef4444");
 const currentIcon = createCustomIcon("#f97316");
+const ghostIcon = createCustomIcon("#a855f7");
 
 function deg2rad(deg: number) {
   return deg * (Math.PI/180);
@@ -133,6 +139,46 @@ export default function Activity() {
   const [paceThreshold, setPaceThreshold] = useState(5.0); // min/km
   const [distanceThreshold, setDistanceThreshold] = useState(1.0); // km
   const [alertTriggered, setAlertTriggered] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const [ghostPath, setGhostPath] = useState<[number, number][] | null>(null);
+  const [ghostTotalTime, setGhostTotalTime] = useState(0);
+  const [autoPaused, setAutoPaused] = useState(false);
+  const lastMovementTimeRef = useRef(Date.now());
+  const ghostId = searchParams.get('ghostId');
+  
+  // Settings modal
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Kalman filter refs
+  const kalmanLat = useRef(new KalmanFilter());
+  const kalmanLon = useRef(new KalmanFilter());
+
+  // Load ghost activity if requested
+  useEffect(() => {
+    if (ghostId) {
+      const fetchGhost = async () => {
+        try {
+          const docSnap = await getDoc(doc(db, "activities", ghostId));
+          if (docSnap.exists()) {
+            setGhostPath(docSnap.data().route || []);
+            setGhostTotalTime(docSnap.data().timeSeconds || 0);
+          }
+        } catch (error) {
+          console.error("Error fetching ghost", error);
+        }
+      };
+      fetchGhost();
+    }
+  }, [ghostId]);
+  
+  // Ghost position calculation
+  const getGhostPosition = (): [number, number] | null => {
+      if (!ghostPath || ghostPath.length === 0 || ghostTotalTime === 0 || time === 0) return null;
+      const progress = Math.min(time / ghostTotalTime, 1);
+      const index = Math.floor(progress * (ghostPath.length - 1));
+      return ghostPath[index];
+  };
+  const ghostPosition = getGhostPosition();
   
   // Custom dark map tiles via CartoDB
   const mapboxUrl = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
@@ -163,7 +209,11 @@ export default function Activity() {
         watchIdRef.current = navigator.geolocation.watchPosition(
           (position) => {
             const { latitude, longitude, accuracy } = position.coords;
-            const newPos: [number, number] = [latitude, longitude];
+            
+            // Apply Kalman filter
+            const smoothedLat = kalmanLat.current.filter(latitude);
+            const smoothedLon = kalmanLon.current.filter(longitude);
+            const newPos: [number, number] = [smoothedLat, smoothedLon];
             
             if (accuracy <= 30) {
               setGpsSignal('strong');
@@ -181,6 +231,7 @@ export default function Activity() {
                 const d = getDistance(lastPos[0], lastPos[1], latitude, longitude);
                 // Require at least 5 meters movement to add to path
                 if (d > 0.005) {
+                  lastMovementTimeRef.current = Date.now();
                   const newDist = distance + d;
 
                   // Pace/Distance Alert Check
@@ -219,6 +270,19 @@ export default function Activity() {
     };
   }, [workoutState]);
 
+  // Auto-pause check
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (workoutState === 'tracking') {
+        if (Date.now() - lastMovementTimeRef.current > 30000) {
+          setAutoPaused(true);
+          setWorkoutState('paused');
+        }
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [workoutState]);
+
   const handleStart = async () => {
     triggerHaptics('medium');
     setWorkoutState('tracking');
@@ -226,6 +290,8 @@ export default function Activity() {
     setTime(0);
     setDistance(0);
     setIsAutoCenter(true);
+    lastMovementTimeRef.current = Date.now();
+    setAutoPaused(false);
   };
 
   const handlePause = () => {
@@ -235,6 +301,8 @@ export default function Activity() {
   const handleResume = () => {
     triggerHaptics('light');
     setWorkoutState('tracking');
+    setAutoPaused(false);
+    lastMovementTimeRef.current = Date.now();
   }
   
   const handleStop = async () => {
@@ -261,6 +329,7 @@ export default function Activity() {
           pace: time > 0 ? (time / 60) / distance : 0,
           status: 'finished',
           updatedAt: serverTimestamp(),
+          route: routePath,
         });
         setCurrentActivityId(newDocRef.id);
       } catch (e) {
@@ -337,7 +406,22 @@ export default function Activity() {
           
           {/* Current Position Marker */}
           {currentPosition && workoutState !== 'finished' && (
-            <Marker position={currentPosition} icon={currentIcon} />
+            <InteractiveMarker 
+              position={currentPosition} 
+              icon={currentIcon}
+              label="Current Position"
+              setIsAutoCenter={setIsAutoCenter}
+            />
+          )}
+
+          {/* Ghost Position Marker */}
+          {ghostPosition && workoutState === 'tracking' && (
+            <InteractiveMarker 
+              position={ghostPosition} 
+              icon={ghostIcon}
+              label="Ghost Position"
+              setIsAutoCenter={setIsAutoCenter}
+            />
           )}
 
         </MapContainer>
@@ -386,25 +470,44 @@ export default function Activity() {
               initial={{ y: -100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: -100, opacity: 0 }}
-              className="absolute top-8 inset-x-4 md:left-[20%] md:right-[20%] z-[400] bg-black/80 backdrop-blur-xl border border-[#222] rounded-3xl p-4 flex items-center justify-around shadow-[0_10px_40px_rgba(0,0,0,0.8)]"
+              className="absolute top-8 inset-x-4 md:left-[20%] md:right-[20%] z-[400] flex flex-col gap-2"
             >
-              <div className="text-center">
-                <p className="text-gray-400 font-medium tracking-widest uppercase text-[10px] mb-0.5">Time</p>
-                <span className="font-display font-bold text-2xl text-white">{formatTime(time)}</span>
-              </div>
-              <div className="w-px h-8 bg-[#333]"></div>
-              <div className="text-center">
-                <p className="text-gray-400 font-medium tracking-widest uppercase text-[10px] mb-0.5">Dist (km)</p>
-                <span className="font-display font-bold text-2xl text-white">{distance.toFixed(2)}</span>
-              </div>
-              <div className="w-px h-8 bg-[#333]"></div>
-              <div className="text-center">
-                <p className="text-gray-400 font-medium tracking-widest uppercase text-[10px] mb-0.5">Pace</p>
-                <span className="font-display font-bold text-2xl text-white">{PaceFormatted}</span>
+              {autoPaused && (
+                <div className="bg-yellow-500 text-black font-bold py-2 rounded-2xl text-center text-sm shadow-lg">
+                  AUTO-PAUSED due to inactivity
+                </div>
+              )}
+              <div className="relative bg-black/80 backdrop-blur-xl border border-[#222] rounded-3xl p-4 flex items-center justify-around shadow-[0_10px_40px_rgba(0,0,0,0.8)]">
+                <button onClick={() => setIsSettingsOpen(true)} className="absolute top-2 right-4 text-gray-400 hover:text-white">
+                  <Settings className="w-5 h-5"/>
+                </button>
+                <div className="text-center">
+                  <p className="text-gray-400 font-medium tracking-widest uppercase text-[10px] mb-0.5">Time</p>
+                  <span className="font-display font-bold text-2xl text-white">{formatTime(time)}</span>
+                </div>
+                <div className="w-px h-8 bg-[#333]"></div>
+                <div className="text-center">
+                  <p className="text-gray-400 font-medium tracking-widest uppercase text-[10px] mb-0.5">Dist (km)</p>
+                  <span className="font-display font-bold text-2xl text-white">{distance.toFixed(2)}</span>
+                </div>
+                <div className="w-px h-8 bg-[#333]"></div>
+                <div className="text-center">
+                  <p className="text-gray-400 font-medium tracking-widest uppercase text-[10px] mb-0.5">Pace</p>
+                  <span className="font-display font-bold text-2xl text-white">{PaceFormatted}</span>
+                </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
+
+        <ActivitySettingsModal 
+          isOpen={isSettingsOpen} 
+          onClose={() => setIsSettingsOpen(false)}
+          paceThreshold={paceThreshold}
+          setPaceThreshold={setPaceThreshold}
+          distanceThreshold={distanceThreshold}
+          setDistanceThreshold={setDistanceThreshold}
+        />
       </div>
 
       {/* Tracking overlay */}

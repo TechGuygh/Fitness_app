@@ -99,6 +99,23 @@
         "createdAt": { "type": "number" }
       },
       "required": ["followerId", "followingId", "createdAt"]
+    },
+    "Notification": {
+      "title": "User Notification",
+      "description": "Alert for likes, comments, or follow events",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Target user ID" },
+        "fromUserId": { "type": "string" },
+        "fromUserName": { "type": "string" },
+        "fromUserAvatar": { "type": "string" },
+        "type": { "type": "string", "enum": ["like", "comment", "follow", "milestone"] },
+        "targetId": { "type": "string", "description": "ID of post or activity" },
+        "targetType": { "type": "string", "enum": ["post", "activity"] },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "fromUserId", "type", "createdAt"]
     }
   },
   "firestore": {
@@ -129,6 +146,10 @@
     "/follows/{followId}": {
       "schema": { "$ref": "#/entities/Follow" },
       "description": "User follows"
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "User notifications"
     }
   }
 }

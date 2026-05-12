@@ -1,29 +1,34 @@
 import { useState, useEffect, useRef } from "react";
-import { Heart, MessageCircle, Share2, Trophy, Users, Send, UserPlus, UserCheck } from "lucide-react";
+import { Heart, MessageCircle, Share2, Trophy, Users, Send, UserPlus, UserCheck, PlusCircle, Bell, Check } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
-import { collection, query, where, orderBy, getDocs, setDoc, doc, serverTimestamp, onSnapshot, updateDoc, increment, deleteDoc } from "firebase/firestore";
+import { collection, query, where, orderBy, getDocs, setDoc, doc, serverTimestamp, onSnapshot, updateDoc, increment, deleteDoc, arrayUnion, arrayRemove } from "firebase/firestore";
 import { db } from "@/src/lib/firebase";
 import { useAuth } from "@/src/components/auth/AuthProvider";
 import { handleFirestoreError, OperationType } from "@/src/lib/firebase-error";
 import { format } from "date-fns";
+import { useNavigate } from "react-router-dom";
+import RouteCreatorModal from "@/src/components/RouteCreatorModal";
 
-const TABS = ["Feed", "Challenges", "Chat", "Leaderboard"];
+const TABS = ["Feed", "Challenges", "Chat", "Leaderboard", "Routes"]; // Added Routes
 
 export default function Community() {
   const [activeTab, setActiveTab] = useState("Feed");
   const { user } = useAuth();
+  const navigate = useNavigate();
   
-  const [feedPosts, setFeedPosts] = useState<any[]>([]);
-  const [challenges, setChallenges] = useState<any[]>([]);
-  const [messages, setMessages] = useState<any[]>([]);
-  const [activities, setActivities] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
   // Form states
   const [newPost, setNewPost] = useState("");
   const [newChallenge, setNewChallenge] = useState({ title: "", goal: "100km this month" });
   const [newMessage, setNewMessage] = useState("");
+  
+  // Missing states
+  const [feedPosts, setFeedPosts] = useState<any[]>([]);
+  const [challenges, setChallenges] = useState<any[]>([]);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [activities, setActivities] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
   
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -34,7 +39,43 @@ export default function Community() {
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
   const [followedUsers, setFollowedUsers] = useState<Record<string, string>>({}); // { followingId: followDocId }
   const [users, setUsers] = useState<any[]>([]);
+  const [routes, setRoutes] = useState<any[]>([]); // New state
   const [selectedUser, setSelectedUser] = useState<string | null>(null); // null = global
+  const [isRouteCreatorOpen, setIsRouteCreatorOpen] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  // Feed infinite scroll
+  const [displayCount, setDisplayCount] = useState(5);
+  const feedBottomRef = useRef<HTMLDivElement>(null);
+  
+  useEffect(() => {
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting && !loading) {
+         setDisplayCount(prev => prev + 5);
+      }
+    }, { threshold: 0.1 });
+    if (feedBottomRef.current) observer.observe(feedBottomRef.current);
+    return () => observer.disconnect();
+  }, [loading]);
+
+  // Chat notification
+  const prevMessagesLength = useRef(messages.length);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+
+  useEffect(() => {
+    if (messages.length > prevMessagesLength.current) {
+        if (activeTab !== "Chat") {
+            setUnreadChatCount(prev => prev + (messages.length - prevMessagesLength.current));
+        }
+    }
+    prevMessagesLength.current = messages.length;
+  }, [messages.length, activeTab]);
+
+  useEffect(() => {
+    if (activeTab === "Chat") {
+        setUnreadChatCount(0);
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab === "Chat") {
@@ -42,19 +83,34 @@ export default function Community() {
     }
   }, [messages, activeTab]);
 
+  // Notifications logic
+  const unreadNotifications = notifications.filter(n => !n.read).length;
+
   useEffect(() => {
     if (!user) return;
 
     let unsubMessages: () => void = () => {};
     let unsubActsGlobal: () => void = () => {};
+    let unsubFollows: () => void = () => {};
+    let unsubPosts: () => void = () => {};
+    let unsubActsFeed: () => void = () => {};
+    let unsubNotifications: () => void = () => {};
 
-    async function fetchData() {
-      setLoading(true);
-      try {
-        // Fetch Feed (Current user activities + Global posts for simplicity)
-        const qPosts = query(collection(db, "posts"), orderBy("createdAt", "desc"));
-        const snapPosts = await getDocs(qPosts);
-        const postsData = snapPosts.docs.map(doc => ({
+    // 1. Listen to follows first to build feed
+    unsubFollows = onSnapshot(query(collection(db, "follows"), where("followerId", "==", user.uid)), (snap) => {
+      const followsMap: Record<string, string> = {};
+      snap.docs.forEach(doc => {
+         followsMap[doc.data().followingId] = doc.id;
+      });
+      setFollowedUsers(followsMap);
+      
+      const friendIds = Object.keys(followsMap);
+      // Logic for feed posts listener
+      const feedUids = [user.uid, ...friendIds].slice(0, 10); // Firestore limit
+      
+      const qPosts = query(collection(db, "posts"), where("userId", "in", feedUids), orderBy("createdAt", "desc"));
+      unsubPosts = onSnapshot(qPosts, (snap) => {
+        const posts = snap.docs.map(doc => ({
           id: doc.id,
           type: 'text_post',
           user: {
@@ -69,15 +125,19 @@ export default function Community() {
           date: doc.data().createdAt?.toDate ? format(doc.data().createdAt.toDate(), "MMM d, h:mm a") : "Just now",
           rawDate: doc.data().createdAt?.toDate?.() || new Date()
         }));
+        setFeedPosts(prev => {
+           const existingActs = prev.filter(p => p.type === 'activity');
+           const combined = [...posts, ...existingActs].sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
+           return combined;
+        });
+      }, (err) => {
+        // Fallback to global if filter fails or just ignore
+        console.warn("Friend feed error, likely no posts yet", err);
+      });
 
-        // Fetch Users
-        const qUsers = query(collection(db, "users"));
-        const snapUsers = await getDocs(qUsers);
-        setUsers(snapUsers.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(u => u.id !== user!.uid));
-
-        const qActs = query(collection(db, "activities"), where("userId", "==", user!.uid), orderBy("createdAt", "desc"));
-        const snapActs = await getDocs(qActs);
-        const actsData = snapActs.docs.map(doc => {
+      const qActsFeed = query(collection(db, "activities"), where("userId", "in", feedUids), orderBy("createdAt", "desc"));
+      unsubActsFeed = onSnapshot(qActsFeed, (snap) => {
+        const acts = snap.docs.map(doc => {
           const data = doc.data();
           const date = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
           const m = Math.floor(data.timeSeconds / 60);
@@ -90,83 +150,110 @@ export default function Community() {
             id: doc.id,
             type: 'activity',
             user: {
-              id: user?.uid,
-              name: user?.displayName || "Athlete",
-              avatar: user?.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.displayName}`,
-              level: 1
+               id: data.userId,
+               name: data.userId === user.uid ? (user.displayName || "Athlete") : (users.find(u => u.id === data.userId)?.displayName || "Athlete"),
+               avatar: data.userId === user.uid ? (user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.displayName}`) : (users.find(u => u.id === data.userId)?.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=friend`),
+               level: 1
             },
             activity: data.activityType === 'run' ? 'Morning Run' : 'Cycling Session',
             distance: `${data.distance.toFixed(2)} km`,
             pace: pace > 0 ? `${paceM}'${paceS}"/km` : "0'00\"/km",
             time: `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`,
-            likes: 0,
+            likes: data.likes || 0,
             comments: 0,
             date: format(date, "MMM d, h:mm a"),
             image: data.activityType === 'run' 
               ? "https://images.unsplash.com/photo-1541252860246-bea5bec28ef8?auto=format&fit=crop&q=80&w=600&h=400"
               : "https://images.unsplash.com/photo-1517646287270-a5a9ca602ebc?auto=format&fit=crop&q=80&w=600&h=400",
-            rawDate: date
+            rawDate: date,
+            milestone: data.distance >= 10 ? "10K Milestone! 🎉" : data.distance >= 5 ? "5K Completed! 🏆" : null
           };
         });
-
-        const combined = [...postsData, ...actsData].sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
-        setFeedPosts(combined);
-
-        // Fetch Follows
-        const qFollows = query(collection(db, "follows"), where("followerId", "==", user.uid));
-        const snapFollows = await getDocs(qFollows);
-        const followsMap: Record<string, string> = {};
-        snapFollows.docs.forEach(doc => {
-           followsMap[doc.data().followingId] = doc.id;
+        setFeedPosts(prev => {
+          const existingPosts = prev.filter(p => p.type === 'text_post');
+          const combined = [...existingPosts, ...acts].sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
+          return combined;
         });
-        setFollowedUsers(followsMap);
+      });
+    });
 
-        // Fetch Challenges
-        const qChal = query(collection(db, "challenges"), orderBy("createdAt", "desc"));
-        const snapChal = await getDocs(qChal);
-        setChallenges(snapChal.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-      } catch (error: any) {
-        if (error.message.includes("users")) handleFirestoreError(error, OperationType.LIST, "users");
-        else if (error.message.includes("posts")) handleFirestoreError(error, OperationType.LIST, "posts");
-        else if (error.message.includes("activities")) handleFirestoreError(error, OperationType.LIST, "activities");
-        else if (error.message.includes("follows")) handleFirestoreError(error, OperationType.LIST, "follows");
-        else if (error.message.includes("challenges")) handleFirestoreError(error, OperationType.LIST, "challenges");
-        else handleFirestoreError(error, OperationType.LIST, "community-aggregated");
-      } finally {
-        setLoading(false);
-      }
-    }
+    // 2. Fetch Users
+    getDocs(query(collection(db, "users"))).then(snapUsers => {
+       setUsers(snapUsers.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(u => u.id !== user!.uid));
+    });
 
-    fetchData();
+    // 3. Listen to Notifications
+    unsubNotifications = onSnapshot(query(collection(db, "notifications"), where("userId", "==", user.uid), orderBy("createdAt", "desc")), (snap) => {
+       setNotifications(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
 
-    // Listen to messages
+    // 4. Other Listeners (Messages, Leaderboard, Challenges, Routes)
     const qMsgs = query(collection(db, "messages"), orderBy("createdAt", "asc"));
     unsubMessages = onSnapshot(qMsgs, (snap) => {
       setMessages(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (error) => handleFirestoreError(error, OperationType.LIST, "messages"));
     
-    // Listen to activities for leaderboard
     const qActsGlobal = query(collection(db, "activities"));
     unsubActsGlobal = onSnapshot(qActsGlobal, (snap) => {
         setActivities(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (error) => handleFirestoreError(error, OperationType.LIST, "activities"));
 
+    getDocs(query(collection(db, "challenges"), orderBy("createdAt", "desc"))).then(snapChal => {
+       setChallenges(snapChal.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
     return () => {
       unsubMessages();
       unsubActsGlobal();
+      unsubFollows();
+      if (unsubPosts) unsubPosts();
+      if (unsubActsFeed) unsubActsFeed();
+      unsubNotifications();
     };
   }, [user]);
 
+  const createNotification = async (targetUserId: string, type: string, targetId: string, targetType: string) => {
+    if (!user || user.uid === targetUserId) return;
+    try {
+      const ref = doc(collection(db, "notifications"));
+      await setDoc(ref, {
+        userId: targetUserId,
+        fromUserId: user.uid,
+        fromUserName: user.displayName || "Athlete",
+        fromUserAvatar: user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.displayName}`,
+        type,
+        targetId,
+        targetType,
+        read: false,
+        createdAt: serverTimestamp()
+      });
+    } catch (e) {
+      console.warn("Notification trigger failed", e);
+    }
+  };
+
   const leaderboardData = () => {
-    // Basic calculation for prototype
-    const userStats: Record<string, { name: string, avatar: string, distance: number }> = {};
+    // Aggregation based on user IDs
+    const userStatsMap: Record<string, number> = {};
     activities.forEach(act => {
-        if (!userStats[act.userId]) {
-            userStats[act.userId] = { name: act.userName || "Athlete", avatar: act.userAvatar || "", distance: 0 };
+        if (!userStatsMap[act.userId]) {
+            userStatsMap[act.userId] = 0;
         }
-        userStats[act.userId].distance += act.distance || 0;
+        userStatsMap[act.userId] += act.distance || 0;
     });                
-    return Object.entries(userStats).sort((a, b) => b[1].distance - a[1].distance);
+    
+    // Map to users state data
+    return Object.entries(userStatsMap)
+        .map(([uid, distance]) => {
+            const userProfile = users.find(u => u.id === uid) || { displayName: "Athlete", photoURL: "" };
+            return { 
+                uid,
+                name: userProfile.displayName || "Athlete", 
+                avatar: userProfile.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userProfile.displayName}`, 
+                distance 
+            };
+        })
+        .sort((a, b) => b.distance - a.distance);
   };
 
   const toggleComments = async (postId: string) => {
@@ -189,6 +276,36 @@ export default function Community() {
     }
   };
 
+  const handleCommentReaction = async (postId: string, commentId: string, emoji: string) => {
+    if (!user) return;
+    const comment = postComments[postId]?.find(c => c.id === commentId);
+    if (!comment) return;
+    const hasReacted = comment.reactions?.[emoji]?.includes(user.uid);
+    
+    // optimistic
+    setPostComments(prev => {
+      const updated = (prev[postId] || []).map(c => {
+         if (c.id === commentId) {
+            const reactions = c.reactions || {};
+            const userList = reactions[emoji] || [];
+            const newList = hasReacted ? userList.filter((uid: string) => uid !== user.uid) : [...userList, user.uid];
+            return { ...c, reactions: { ...reactions, [emoji]: newList }};
+         }
+         return c;
+      });
+      return { ...prev, [postId]: updated };
+    });
+
+    try {
+      const commentRef = doc(db, "comments", commentId);
+      await updateDoc(commentRef, {
+        [`reactions.${emoji}`]: hasReacted ? arrayRemove(user.uid) : arrayUnion(user.uid)
+      });
+    } catch(e) {
+      handleFirestoreError(e, OperationType.UPDATE, "comments");
+    }
+  };
+
   const handleCreateComment = async (postId: string) => {
     if (!newComment.trim() || !user) return;
     try {
@@ -203,6 +320,12 @@ export default function Community() {
       };
       await setDoc(ref, c);
       setNewComment("");
+      
+      const targetPost = feedPosts.find(p => p.id === postId);
+      if (targetPost) {
+        createNotification(targetPost.user.id, "comment", postId, targetPost.type);
+      }
+
       setPostComments(prev => ({
         ...prev,
         [postId]: [...(prev[postId] || []), { ...c, id: ref.id, date: "Just now" }]
@@ -231,6 +354,13 @@ export default function Community() {
       await updateDoc(doc(db, cName, postId), {
         likes: increment(incVal)
       });
+      
+      if (!isLiked) {
+         const targetPost = feedPosts.find(p => p.id === postId);
+         if (targetPost) {
+           createNotification(targetPost.user.id, "like", postId, targetPost.type);
+         }
+      }
     } catch (e) {
       // Revert if error
       setLikedPosts(prev => {
@@ -284,6 +414,7 @@ export default function Community() {
           followingId: targetUserId,
           createdAt: serverTimestamp()
         });
+        createNotification(targetUserId, "follow", user.uid, "user");
       }
     } catch(e) {
       console.error(e);
@@ -366,6 +497,16 @@ export default function Community() {
     }
   };
 
+  const markNotificationsRead = async () => {
+    if (!user) return;
+    try {
+      const unread = notifications.filter(n => !n.read);
+      await Promise.all(unread.map(n => updateDoc(doc(db, "notifications", n.id), { read: true })));
+    } catch (e) {
+      console.error("Failed to mark notifications read", e);
+    }
+  };
+
   if (!user) return null;
 
   return (
@@ -373,18 +514,79 @@ export default function Community() {
       
       {/* Header */}
       <div className="shrink-0 mb-6">
-        <h2 className="text-3xl font-display font-bold text-white mb-6">Community</h2>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-3xl font-display font-bold text-white">Community</h2>
+          <div className="relative">
+             <button 
+               onClick={() => {
+                 setShowNotifications(!showNotifications);
+                 if (!showNotifications) markNotificationsRead();
+               }} 
+               className="p-3 bg-[#111] border border-[#222] rounded-2xl text-white hover:border-brand-500 transition-all relative"
+             >
+                <Bell className="w-6 h-6" />
+                {unreadNotifications > 0 && (
+                   <span className="absolute top-2 right-2 w-4 h-4 bg-brand-500 text-black text-[10px] font-bold rounded-full flex items-center justify-center">
+                     {unreadNotifications}
+                   </span>
+                )}
+             </button>
+
+             <AnimatePresence>
+                {showNotifications && (
+                   <motion.div 
+                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                     animate={{ opacity: 1, y: 0, scale: 1 }}
+                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                     className="absolute right-0 mt-2 w-80 bg-[#111] border border-[#222] rounded-3xl shadow-2xl z-[500] max-h-[400px] overflow-y-auto"
+                   >
+                      <div className="p-4 border-b border-[#222] flex justify-between items-center bg-[#161616]">
+                         <span className="text-sm font-bold text-white">Notifications</span>
+                         <Trophy className="w-4 h-4 text-brand-500" />
+                      </div>
+                      <div className="p-2">
+                        {notifications.length === 0 ? (
+                           <div className="p-8 text-center text-gray-500 text-sm">No notifications yet</div>
+                        ) : (
+                           notifications.map(notif => (
+                              <div key={notif.id} className={cn("p-3 rounded-2xl flex gap-3 mb-1 transition-colors", notif.read ? "opacity-100" : "bg-[#222]")}>
+                                 <img src={notif.fromUserAvatar} className="w-10 h-10 rounded-full shrink-0" />
+                                 <div className="flex-1">
+                                    <p className="text-sm text-gray-200">
+                                       <span className="font-bold text-white">{notif.fromUserName}</span>
+                                       {notif.type === 'like' && " liked your post"}
+                                       {notif.type === 'comment' && " commented on your post"}
+                                       {notif.type === 'follow' && " started following you"}
+                                       {notif.type === 'milestone' && ` reached a milestone: ${notif.targetId}`}
+                                    </p>
+                                    <p className="text-[10px] text-gray-500 mt-1 uppercase font-bold tracking-wider">
+                                       {notif.createdAt?.toDate ? format(notif.createdAt.toDate(), "MMM d, h:mm a") : "Just now"}
+                                    </p>
+                                 </div>
+                                 {!notif.read && <div className="w-2 h-2 bg-brand-500 rounded-full mt-2 shrink-0" />}
+                              </div>
+                           ))
+                        )}
+                      </div>
+                   </motion.div>
+                )}
+             </AnimatePresence>
+          </div>
+        </div>
         <div className="flex bg-[#111] border border-[#222] p-1 rounded-xl">
           {TABS.map(tab => (
             <button 
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={cn(
-                "flex-1 py-2 text-sm font-semibold rounded-lg transition-all",
+                "flex-1 py-2 text-sm font-semibold rounded-lg transition-all relative",
                 activeTab === tab ? "bg-[#222] text-white shadow-sm" : "text-gray-500 hover:text-gray-300"
               )}
             >
               {tab}
+              {tab === "Chat" && unreadChatCount > 0 && (
+                 <span className="absolute top-1 right-2 w-2 h-2 bg-brand-500 rounded-full animate-pulse"></span>
+              )}
             </button>
           ))}
         </div>
@@ -415,7 +617,7 @@ export default function Community() {
                   No public activities to show yet.
                </div>
             ) : (
-                feedPosts.map(post => (
+                feedPosts.slice(0, displayCount).map(post => (
                   <motion.div key={post.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-[#111] border border-[#222] rounded-3xl overflow-hidden">
                     <div className="p-4 flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -438,7 +640,14 @@ export default function Community() {
                     {post.type === 'activity' ? (
                       <>
                         <div className="px-4 pb-3">
-                          <h3 className="font-display font-bold text-lg text-white mb-3">{post.activity}</h3>
+                          <div className="flex justify-between items-start mb-3">
+                            <h3 className="font-display font-bold text-lg text-white">{post.activity}</h3>
+                            {post.milestone && (
+                               <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="bg-brand-500/20 text-brand-500 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+                                  <Trophy className="w-3 h-3" /> {post.milestone}
+                               </motion.div>
+                            )}
+                          </div>
                           <div className="flex gap-6">
                             <div>
                               <p className="text-[10px] text-gray-500 uppercase font-semibold tracking-wider">Distance</p>
@@ -464,7 +673,7 @@ export default function Community() {
                        </div>
                     )}
 
-                    <div className="p-4 flex items-center justify-between border-t border-[#222]">
+                      <div className="p-4 flex items-center justify-between border-t border-[#222]">
                       <div className="flex gap-4">
                         <button onClick={() => handleLike(post.id, post.type)} className={cn("flex items-center gap-1.5 transition-colors", likedPosts.has(post.id) ? "text-brand-500" : "text-gray-400 hover:text-brand-400")}>
                           <Heart className={cn("w-5 h-5", likedPosts.has(post.id) ? "fill-brand-500" : "")} />
@@ -475,46 +684,70 @@ export default function Community() {
                           <span className="text-sm font-medium">{post.comments || (postComments[post.id]?.length || 0)}</span>
                         </button>
                       </div>
-                      <button onClick={() => handleShare(post.id)} className="text-gray-400 hover:text-white transition-colors">
-                        <Share2 className="w-5 h-5" />
-                      </button>
+                      <div className="flex gap-4">
+                        {post.type === 'activity' && (
+                            <button onClick={() => navigate(`/activity?ghostId=${post.id}`)} className="flex items-center gap-1.5 text-brand-500 hover:text-brand-400 transition-colors">
+                              <Trophy className="w-5 h-5 fill-brand-500/20" />
+                              <span className="text-sm font-bold">Race</span>
+                            </button>
+                        )}
+                        <button onClick={() => handleShare(post.id)} className="text-gray-400 hover:text-white transition-colors">
+                          <Share2 className="w-5 h-5" />
+                        </button>
+                      </div>
                     </div>
 
                     <AnimatePresence>
                       {expandedComments === post.id && (
                         <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="border-t border-[#222] bg-[#161616]">
-                          <div className="p-4 space-y-4">
-                            {postComments[post.id]?.map(comment => (
-                              <div key={comment.id} className="flex gap-3">
-                                <img src={comment.userAvatar} className="w-6 h-6 rounded-full" />
-                                <div>
-                                  <div className="bg-[#222] rounded-xl rounded-tl-sm px-3 py-2">
-                                    <span className="text-xs font-semibold text-white block mb-0.5">{comment.userName}</span>
-                                    <span className="text-sm text-gray-300">{comment.text}</span>
-                                  </div>
+                          <div className="p-4 flex flex-col gap-4">
+                             <div className="space-y-4">
+                                {postComments[post.id]?.map(comment => (
+                                <motion.div key={comment.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="flex gap-3">
+                                    <img src={comment.userAvatar} className="w-8 h-8 rounded-full shrink-0" />
+                                    <div>
+                                      <div className="bg-[#222] rounded-2xl p-3">
+                                          <span className="text-xs font-semibold text-white mb-0.5 block">{comment.userName}</span>
+                                          <p className="text-sm text-gray-300">{comment.text}</p>
+                                      </div>
+                                      <div className="flex items-center gap-2 mt-2">
+                                         <button onClick={() => handleCommentReaction(post.id, comment.id, "🔥")} className={cn("text-xs font-bold px-2 py-1 rounded-full", comment.reactions?.["🔥"]?.includes(user!.uid) ? "bg-brand-500/20 text-brand-500" : "bg-[#222] text-gray-400 hover:text-white")}>
+                                           🔥 {comment.reactions?.["🔥"]?.length || 0}
+                                         </button>
+                                         <button onClick={() => handleCommentReaction(post.id, comment.id, "👏")} className={cn("text-xs font-bold px-2 py-1 rounded-full", comment.reactions?.["👏"]?.includes(user!.uid) ? "bg-brand-500/20 text-brand-500" : "bg-[#222] text-gray-400 hover:text-white")}>
+                                           👏 {comment.reactions?.["👏"]?.length || 0}
+                                         </button>
+                                      </div>
+                                    </div>
+                                </motion.div>
+                                ))}
+                             </div>
+                             
+                             <div className="flex gap-3 items-center pt-4 border-t border-[#222]">
+                                <img src={user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.displayName}`} className="w-8 h-8 rounded-full shrink-0" />
+                                <div className="flex-1 flex gap-2">
+                                   <input 
+                                     type="text" 
+                                     placeholder="Write a comment..." 
+                                     value={newComment}
+                                     onChange={(e) => setNewComment(e.target.value)}
+                                     onKeyDown={(e) => e.key === 'Enter' && handleCreateComment(post.id)}
+                                     className="flex-1 bg-[#222] border border-[#333] rounded-full px-4 py-2 text-sm outline-none text-white focus:ring-1 ring-brand-500"
+                                   />
+                                   <button onClick={() => handleCreateComment(post.id)} className="text-brand-500 hover:text-brand-400 shrink-0 font-semibold text-sm">Post</button>
                                 </div>
-                              </div>
-                            ))}
-                            <div className="flex gap-3 items-center mt-2">
-                               <img src={user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.displayName}`} className="w-6 h-6 rounded-full shrink-0" />
-                               <div className="flex-1 flex gap-2">
-                                  <input 
-                                    type="text" 
-                                    placeholder="Write a comment..." 
-                                    value={newComment}
-                                    onChange={(e) => setNewComment(e.target.value)}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleCreateComment(post.id)}
-                                    className="flex-1 bg-[#222] border-none rounded-full px-4 py-1.5 text-sm outline-none text-white focus:ring-1 ring-brand-500"
-                                  />
-                                  <button onClick={() => handleCreateComment(post.id)} className="text-brand-500 hover:text-brand-400 shrink-0 font-semibold text-sm">Post</button>
-                               </div>
-                            </div>
+                             </div>
                           </div>
                         </motion.div>
                       )}
                     </AnimatePresence>
                   </motion.div>
                 ))
+            )}
+            {feedPosts.length > displayCount && (
+               <div ref={feedBottomRef} className="py-8 flex justify-center">
+                  <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
+               </div>
             )}
           </div>
         )}
@@ -644,18 +877,43 @@ export default function Community() {
         {activeTab === "Leaderboard" && (                
           <div className="bg-[#111] border border-[#222] rounded-3xl p-6 min-h-[400px]">
              <h3 className="text-white font-display font-bold text-xl mb-6">Top Athletes</h3>
-             {leaderboardData().map(([uid, stats], i) => (
-                 <div key={uid} className="flex items-center gap-4 mb-4 p-3 bg-[#222] rounded-xl">
+             {leaderboardData().map((stats, i) => (
+                 <div key={stats.uid} className="flex items-center gap-4 mb-4 p-3 bg-[#222] rounded-xl">
                     <span className="font-bold text-gray-500 w-6">#{i + 1}</span>
-                    <img src={stats.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${stats.name}`} className="w-10 h-10 rounded-full" />
+                    <img src={stats.avatar} className="w-10 h-10 rounded-full" />
                     <span className="text-white font-semibold flex-1">{stats.name}</span>
                     <span className="text-brand-500 font-bold">{stats.distance.toFixed(1)} km</span>
                  </div>
              ))}
           </div>                
+        )}                
+
+        {activeTab === "Routes" && (
+          <div className="space-y-4 pb-6">                
+             <div className="flex justify-between items-center mb-4">
+               <h3 className="text-white font-display font-bold text-xl">Community Favorite Routes</h3>
+               <button onClick={() => setIsRouteCreatorOpen(true)} className="bg-[#222] text-brand-500 hover:bg-[#333] transition-colors p-2 rounded-xl flex items-center gap-2">
+                 <PlusCircle className="w-5 h-5"/>
+                 <span className="text-sm font-bold pr-2">Create Route</span>
+               </button>
+             </div>
+             {routes.map(route => (
+                <div key={route.id} className="bg-[#111] border border-[#222] rounded-3xl p-5 flex items-center gap-4">
+                   <div className="w-16 h-16 rounded-2xl bg-[#222] flex items-center justify-center">
+                     <Trophy className="w-8 h-8 text-brand-500" />
+                   </div>                
+                   <div className="flex-1">
+                     <p className="text-white font-semibold">{route.activityType === 'run' ? 'Running' : 'Cycling'} Route</p>
+                     <p className="text-gray-500 text-sm">{route.distance.toFixed(1)} km • {route.likes} Likes</p>
+                   </div>
+                   <button onClick={() => navigate(`/activity?ghostId=${route.id}`)} className="bg-white text-black px-4 py-2 rounded-xl text-sm font-bold">Race</button>
+                </div>
+             ))}
+          </div>                
         )}
       </div>
 
+      <RouteCreatorModal isOpen={isRouteCreatorOpen} onClose={() => setIsRouteCreatorOpen(false)} />
     </div>
   );
 }

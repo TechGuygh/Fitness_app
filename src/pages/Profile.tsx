@@ -94,6 +94,21 @@ export default function Profile() {
     }
   }, [user]);
 
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [newName, setNewName] = useState(user.displayName || "");
+
+  const handleUpdateName = async () => {
+    if (!user) return;
+    try {
+      await updateProfile(auth.currentUser!, { displayName: newName });
+      await updateDoc(doc(db, "users", user.uid), { displayName: newName });
+      setIsEditingName(false);
+    } catch(e) {
+      console.error(e);
+      handleFirestoreError(e, OperationType.UPDATE, "users");
+    }
+  };
+
   if (!user) return null;
 
   const joinDate = profileData?.joinedAt?.toDate ? format(profileData.joinedAt.toDate(), "MMM yyyy") : "recently";
@@ -125,7 +140,26 @@ export default function Profile() {
         </div>
         
         <div className="flex-1">
-          <h2 className="text-3xl font-display font-bold text-white mb-1">{user.displayName || 'Athlete'}</h2>
+          {isEditingName ? (
+            <div className="flex gap-2 mb-1">
+              <input 
+                value={newName} 
+                onChange={(e) => setNewName(e.target.value)}
+                className="text-3xl font-display font-bold text-white bg-[#111] border border-[#333] rounded-lg px-2 py-1 outline-none w-full"
+              />
+              <button 
+                onClick={handleUpdateName}
+                className="text-brand-500 font-bold px-3 py-1 rounded-lg border border-brand-500"
+              >
+                Save
+              </button>
+            </div>
+          ) : (
+             <h2 className="text-3xl font-display font-bold text-white mb-1 cursor-pointer flex items-center gap-2" onClick={() => setIsEditingName(true)}>
+               {user.displayName || 'Athlete'}
+               <span className="text-xs text-gray-500 font-normal underline">Edit</span>
+             </h2>
+          )}
           <p className="text-gray-400 mb-4 font-medium">Joined {joinDate} • Free Member</p>
           
           <div className="flex gap-4">

@@ -161,5 +161,13 @@ service cloud.firestore {
       allow create: if isSignedIn() && isValidId(followId) && isValidFollowCreate(incoming());
       allow delete: if isSignedIn() && isValidId(followId) && existing().followerId == request.auth.uid;
     }
+
+    match /notifications/{notificationId} {
+      allow get: if isSignedIn() && isValidId(notificationId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(notificationId) && incoming().userId != request.auth.uid && incoming().createdAt == request.time;
+      allow update: if isSignedIn() && isValidId(notificationId) && existing().userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      allow delete: if isSignedIn() && isValidId(notificationId) && existing().userId == request.auth.uid;
+    }
   }
 }
