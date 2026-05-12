@@ -95,6 +95,23 @@ service cloud.firestore {
               data.createdAt == request.time;
     }
 
+    function isValidFriendRequestCreate(data) {
+       return data.keys().hasAll(['fromUserId', 'toUserId', 'status', 'createdAt']) &&
+              data.keys().size() == 4 &&
+              data.fromUserId == request.auth.uid &&
+              data.toUserId is string && data.toUserId.size() > 0 && data.toUserId.size() <= 128 &&
+              data.status == 'pending' &&
+              data.createdAt == request.time;
+    }
+
+    function isValidFriendshipCreate(data) {
+       return data.keys().hasAll(['userIds', 'createdAt']) &&
+              data.keys().size() == 2 &&
+              data.userIds is list && data.userIds.size() == 2 &&
+              data.userIds.hasAll([request.auth.uid]) &&
+              data.createdAt == request.time;
+    }
+
     match /users/{userId} {
       allow get: if isSignedIn() && isValidId(userId);
       allow list: if isSignedIn();
@@ -168,6 +185,21 @@ service cloud.firestore {
       allow list: if isSignedIn();
       allow create: if isSignedIn() && isValidId(followId) && isValidFollowCreate(incoming());
       allow delete: if isSignedIn() && isValidId(followId) && existing().followerId == request.auth.uid;
+    }
+
+    match /friendRequests/{requestId} {
+      allow get: if isSignedIn() && isValidId(requestId) && (existing().fromUserId == request.auth.uid || existing().toUserId == request.auth.uid);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(requestId) && isValidFriendRequestCreate(incoming());
+      allow update: if isSignedIn() && isValidId(requestId) && (existing().toUserId == request.auth.uid) && incoming().diff(existing()).affectedKeys().hasOnly(['status']);
+      allow delete: if isSignedIn() && isValidId(requestId) && (existing().fromUserId == request.auth.uid || existing().toUserId == request.auth.uid);
+    }
+
+    match /friendships/{friendshipId} {
+      allow get: if isSignedIn() && isValidId(friendshipId) && existing().userIds.hasAll([request.auth.uid]);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(friendshipId) && isValidFriendshipCreate(incoming());
+      allow delete: if isSignedIn() && isValidId(friendshipId) && existing().userIds.hasAll([request.auth.uid]);
     }
 
     match /notifications/{notificationId} {

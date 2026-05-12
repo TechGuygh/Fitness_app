@@ -109,13 +109,33 @@
         "fromUserId": { "type": "string" },
         "fromUserName": { "type": "string" },
         "fromUserAvatar": { "type": "string" },
-        "type": { "type": "string", "enum": ["like", "comment", "follow", "milestone"] },
+        "type": { "type": "string", "enum": ["like", "comment", "follow", "milestone", "friend_request", "friend_accept"] },
         "targetId": { "type": "string", "description": "ID of post or activity" },
         "targetType": { "type": "string", "enum": ["post", "activity"] },
         "read": { "type": "boolean" },
         "createdAt": { "type": "number" }
       },
       "required": ["userId", "fromUserId", "type", "createdAt"]
+    },
+    "FriendRequest": {
+      "title": "Friend Request",
+      "type": "object",
+      "properties": {
+        "fromUserId": { "type": "string" },
+        "toUserId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected"] },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["fromUserId", "toUserId", "status", "createdAt"]
+    },
+    "Friendship": {
+      "title": "Friendship",
+      "type": "object",
+      "properties": {
+        "userIds": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userIds", "createdAt"]
     }
   },
   "firestore": {
@@ -146,6 +166,14 @@
     "/follows/{followId}": {
       "schema": { "$ref": "#/entities/Follow" },
       "description": "User follows"
+    },
+    "/friendRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/FriendRequest" },
+      "description": "Friend requests"
+    },
+    "/friendships/{friendshipId}": {
+      "schema": { "$ref": "#/entities/Friendship" },
+      "description": "Friendships"
     },
     "/notifications/{notificationId}": {
       "schema": { "$ref": "#/entities/Notification" },

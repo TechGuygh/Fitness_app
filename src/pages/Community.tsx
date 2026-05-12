@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Heart, MessageCircle, Share2, Trophy, Users, Send, UserPlus, UserCheck, PlusCircle, Bell, Check, Edit, Trash2, X } from "lucide-react";
+import { Heart, MessageCircle, Share2, Trophy, Users, Send, UserPlus, UserCheck, PlusCircle, Bell, Check, Edit, Trash2, X, Filter, UserX, UserMinus } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { collection, query, where, orderBy, getDocs, setDoc, doc, serverTimestamp, onSnapshot, updateDoc, increment, deleteDoc, arrayUnion, arrayRemove } from "firebase/firestore";
@@ -11,7 +11,7 @@ import { useNavigate } from "react-router-dom";
 import { formatDistance } from "@/src/lib/utils";
 import RouteCreatorModal from "@/src/components/RouteCreatorModal";
 
-const TABS = ["Feed", "Challenges", "Leaderboard", "Routes"];
+const TABS = ["Feed", "Challenges", "Friends", "Leaderboard", "Routes"];
 
 export default function Community() {
   const [activeTab, setActiveTab] = useState("Feed");
@@ -32,6 +32,10 @@ export default function Community() {
   const [loading, setLoading] = useState(false);
   const [joinedChallenges, setJoinedChallenges] = useState<Set<string>>(new Set());
   const [editingChallenge, setEditingChallenge] = useState<any>(null);
+  const [friendsOnly, setFriendsOnly] = useState(false);
+  const [friendshipIds, setFriendshipIds] = useState<Set<string>>(new Set()); // IDs of friends
+  const [incomingRequests, setIncomingRequests] = useState<any[]>([]);
+  const [outgoingRequests, setOutgoingRequests] = useState<Set<string>>(new Set()); // IDs of users requested
   
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -89,59 +93,98 @@ export default function Community() {
   // Notifications logic
   const unreadNotifications = notifications.filter(n => !n.read).length;
 
+  // Core user-dependent listeners
   useEffect(() => {
     if (!user) return;
 
-    let unsubMessages: () => void = () => {};
-    let unsubActsGlobal: () => void = () => {};
-    let unsubFollows: () => void = () => {};
-    let unsubPosts: () => void = () => {};
-    let unsubActsFeed: () => void = () => {};
-    let unsubNotifications: () => void = () => {};
-
-    // 1. Listen to follows first to build feed
-    unsubFollows = onSnapshot(query(collection(db, "follows"), where("followerId", "==", user.uid)), (snap) => {
+    // Listen to follows
+    const unsubFollows = onSnapshot(query(collection(db, "follows"), where("followerId", "==", user.uid)), (snap) => {
       const followsMap: Record<string, string> = {};
       snap.docs.forEach(doc => {
          followsMap[doc.data().followingId] = doc.id;
       });
       setFollowedUsers(followsMap);
-      
-      const friendIds = Object.keys(followsMap);
-      // Logic for feed posts listener
-      const feedUids = [user.uid, ...friendIds].slice(0, 10); // Firestore limit
-      
-      const qPosts = query(collection(db, "posts"), where("userId", "in", feedUids), orderBy("createdAt", "desc"));
-      unsubPosts = onSnapshot(qPosts, (snap) => {
-        const posts = snap.docs.map(doc => ({
-          id: doc.id,
-          type: 'text_post',
-          user: {
-            id: doc.data().userId,
-            name: doc.data().userName,
-            avatar: doc.data().userAvatar,
-            level: 1
-          },
-          content: doc.data().content,
-          likes: doc.data().likes || 0,
-          comments: 0,
-          date: doc.data().createdAt?.toDate ? format(doc.data().createdAt.toDate(), "MMM d, h:mm a") : "Just now",
-          rawDate: doc.data().createdAt?.toDate?.() || new Date()
-        }));
-        setFeedPosts(prev => {
-           const existingActs = prev.filter(p => p.type === 'activity');
-           const combined = [...posts, ...existingActs].sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
-           return combined;
-        });
-      }, (err) => {
-        // Fallback to global if filter fails or just ignore
-        console.warn("Friend feed error, likely no posts yet", err);
-      });
+    });
 
-      const qActsFeed = query(collection(db, "activities"), where("userId", "in", feedUids), orderBy("createdAt", "desc"));
-      unsubActsFeed = onSnapshot(qActsFeed, (snap) => {
-        const acts = snap.docs.map(doc => {
-          const data = doc.data();
+    // Fetch Users
+    getDocs(query(collection(db, "users"))).then(snapUsers => {
+       setUsers(snapUsers.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(u => u.id !== user!.uid));
+    });
+
+    // Listen to Notifications
+    const unsubNotifications = onSnapshot(query(collection(db, "notifications"), where("userId", "==", user.uid), orderBy("createdAt", "desc")), (snap) => {
+       setNotifications(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    // Listen to joined challenges
+    const unsubJoined = onSnapshot(query(collection(db, "challengeParticipants"), where("userId", "==", user.uid)), (snap) => {
+       setJoinedChallenges(new Set(snap.docs.map(d => d.data().challengeId)));
+    });
+
+    // Listen to friendships
+    const unsubFriends = onSnapshot(query(collection(db, "friendships"), where("userIds", "array-contains", user.uid)), (snap) => {
+       const uids = new Set<string>();
+       snap.docs.forEach(doc => {
+          const ids = doc.data().userIds as string[];
+          ids.forEach(id => { if (id !== user.uid) uids.add(id); });
+       });
+       setFriendshipIds(uids);
+    });
+
+    // Listen to incoming friend requests
+    const unsubIncoming = onSnapshot(query(collection(db, "friendRequests"), where("toUserId", "==", user.uid), where("status", "==", "pending")), (snap) => {
+       setIncomingRequests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
+    // Listen to outgoing friend requests
+    const unsubOutgoing = onSnapshot(query(collection(db, "friendRequests"), where("fromUserId", "==", user.uid), where("status", "==", "pending")), (snap) => {
+       setOutgoingRequests(new Set(snap.docs.map(d => d.data().toUserId)));
+    });
+
+    // Other Listeners (Leaderboard, Challenges)
+    const unsubActsGlobal = onSnapshot(query(collection(db, "activities")), (snap) => {
+        setActivities(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, "activities"));
+
+    getDocs(query(collection(db, "challenges"), orderBy("createdAt", "desc"))).then(snapChal => {
+       setChallenges(snapChal.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    return () => {
+      unsubFollows();
+      unsubNotifications();
+      unsubJoined();
+      unsubFriends();
+      unsubIncoming();
+      unsubOutgoing();
+      unsubActsGlobal();
+    };
+  }, [user]);
+
+  // 2. Feed listener (depends on friendsOnly and followedUsers)
+  useEffect(() => {
+    if (!user) return;
+
+    const updateFeed = (snap: any, type: 'text_post' | 'activity') => {
+      const items = snap.docs.map((doc: any) => {
+        const data = doc.data();
+        if (type === 'text_post') {
+          return {
+            id: doc.id,
+            type: 'text_post',
+            user: {
+              id: data.userId,
+              name: data.userName,
+              avatar: data.userAvatar,
+              level: 1
+            },
+            content: data.content,
+            likes: data.likes || 0,
+            comments: 0,
+            date: data.createdAt?.toDate ? format(data.createdAt.toDate(), "MMM d, h:mm a") : "Just now",
+            rawDate: data.createdAt?.toDate?.() || new Date()
+          };
+        } else {
           const date = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
           const m = Math.floor(data.timeSeconds / 60);
           const s = data.timeSeconds % 60;
@@ -171,55 +214,36 @@ export default function Community() {
             rawDate: date,
             milestone: data.distance >= 10 ? "10K Milestone! 🎉" : data.distance >= 5 ? "5K Completed! 🏆" : null
           };
-        });
-        setFeedPosts(prev => {
-          const existingPosts = prev.filter(p => p.type === 'text_post');
-          const combined = [...existingPosts, ...acts].sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
-          return combined;
-        });
+        }
       });
-    });
 
-    // 2. Fetch Users
-    getDocs(query(collection(db, "users"))).then(snapUsers => {
-       setUsers(snapUsers.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(u => u.id !== user!.uid));
-    });
+      setFeedPosts(prev => {
+        const others = prev.filter(p => p.type !== type);
+        const combined = [...others, ...items].sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
+        return combined;
+      });
+    };
 
-    // 3. Listen to Notifications
-    unsubNotifications = onSnapshot(query(collection(db, "notifications"), where("userId", "==", user.uid), orderBy("createdAt", "desc")), (snap) => {
-       setNotifications(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    const friendIds = Object.keys(followedUsers);
+    const feedUids = [user.uid, ...friendIds].slice(0, 10);
 
-    // 4. Listen to joined challenges
-    const unsubJoined = onSnapshot(query(collection(db, "challengeParticipants"), where("userId", "==", user.uid)), (snap) => {
-       setJoinedChallenges(new Set(snap.docs.map(d => d.data().challengeId)));
-    });
-
-    // 4. Other Listeners (Messages, Leaderboard, Challenges, Routes)
-    const qMsgs = query(collection(db, "messages"), orderBy("createdAt", "asc"));
-    unsubMessages = onSnapshot(qMsgs, (snap) => {
-      setMessages(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, "messages"));
+    const qPosts = friendsOnly 
+      ? query(collection(db, "posts"), where("userId", "in", feedUids), orderBy("createdAt", "desc"))
+      : query(collection(db, "posts"), orderBy("createdAt", "desc"));
     
-    const qActsGlobal = query(collection(db, "activities"));
-    unsubActsGlobal = onSnapshot(qActsGlobal, (snap) => {
-        setActivities(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, (error) => handleFirestoreError(error, OperationType.LIST, "activities"));
+    const unsubPosts = onSnapshot(qPosts, (snap) => updateFeed(snap, 'text_post'));
 
-    getDocs(query(collection(db, "challenges"), orderBy("createdAt", "desc"))).then(snapChal => {
-       setChallenges(snapChal.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    const qActs = friendsOnly
+      ? query(collection(db, "activities"), where("userId", "in", feedUids), orderBy("createdAt", "desc"))
+      : query(collection(db, "activities"), orderBy("createdAt", "desc"));
+      
+    const unsubActsFeed = onSnapshot(qActs, (snap) => updateFeed(snap, 'activity'));
 
     return () => {
-      unsubMessages();
-      unsubActsGlobal();
-      unsubFollows();
-      unsubJoined();
-      if (unsubPosts) unsubPosts();
-      if (unsubActsFeed) unsubActsFeed();
-      unsubNotifications();
+      unsubPosts();
+      unsubActsFeed();
     };
-  }, [user]);
+  }, [user, friendsOnly, followedUsers, users]);
 
   const createNotification = async (targetUserId: string, type: string, targetId: string, targetType: string) => {
     if (!user || user.uid === targetUserId) return;
@@ -499,6 +523,59 @@ export default function Community() {
     }
   };
 
+  const handleSendFriendRequest = async (targetUserId: string) => {
+    if (!user || user.uid === targetUserId || friendshipIds.has(targetUserId) || outgoingRequests.has(targetUserId)) return;
+    try {
+      const ref = doc(collection(db, "friendRequests"));
+      await setDoc(ref, {
+        fromUserId: user.uid,
+        toUserId: targetUserId,
+        status: "pending",
+        createdAt: serverTimestamp()
+      });
+      createNotification(targetUserId, "friend_request", ref.id, "user");
+    } catch (e) {
+      handleFirestoreError(e, OperationType.CREATE, "friendRequests");
+    }
+  };
+
+  const handleAcceptFriendRequest = async (request: any) => {
+    if (!user) return;
+    try {
+      await updateDoc(doc(db, "friendRequests", request.id), { status: "accepted" });
+      const friendshipRef = doc(collection(db, "friendships"));
+      await setDoc(friendshipRef, {
+        userIds: [request.fromUserId, user.uid],
+        createdAt: serverTimestamp()
+      });
+      createNotification(request.fromUserId, "friend_accept", friendshipRef.id, "user");
+    } catch (e) {
+      handleFirestoreError(e, OperationType.UPDATE, "friendRequests");
+    }
+  };
+
+  const handleRejectFriendRequest = async (requestId: string) => {
+    try {
+      await deleteDoc(doc(db, "friendRequests", requestId));
+    } catch (e) {
+       handleFirestoreError(e, OperationType.DELETE, "friendRequests");
+    }
+  };
+
+  const handleRemoveFriend = async (targetUserId: string) => {
+    if (!user || !confirm("Remove this friend?")) return;
+    try {
+      const q = query(collection(db, "friendships"), where("userIds", "array-contains", user.uid));
+      const snap = await getDocs(q);
+      const docToDelete = snap.docs.find(d => (d.data().userIds as string[]).includes(targetUserId));
+      if (docToDelete) {
+        await deleteDoc(doc(db, "friendships", docToDelete.id));
+      }
+    } catch (e) {
+      handleFirestoreError(e, OperationType.DELETE, "friendships");
+    }
+  };
+
   const handleCreatePost = async () => {
     if (!newPost.trim() || !user) return;
     try {
@@ -566,6 +643,7 @@ export default function Community() {
       if (selectedUser) {
         msg.from = user.uid;
         msg.to = selectedUser;
+        msg.participants = [user.uid, selectedUser];
         // Trigger notification for DM
         createNotification(selectedUser, "message", ref.id, "chat");
       }
@@ -595,79 +673,95 @@ export default function Community() {
       <div className="shrink-0 mb-6">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-3xl font-display font-bold text-white">Community</h2>
-          <div className="relative">
-             <button 
-               onClick={() => {
-                 setShowNotifications(!showNotifications);
-                 if (!showNotifications) markNotificationsRead();
-               }} 
-               className="p-3 bg-[#111] border border-[#222] rounded-2xl text-white hover:border-brand-500 transition-all relative"
-             >
-                <Bell className="w-6 h-6" />
-                {unreadNotifications > 0 && (
-                   <span className="absolute top-2 right-2 w-4 h-4 bg-brand-500 text-black text-[10px] font-bold rounded-full flex items-center justify-center">
-                     {unreadNotifications}
-                   </span>
-                )}
-             </button>
-
-             <AnimatePresence>
-                {showNotifications && (
-                   <motion.div 
-                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                     animate={{ opacity: 1, y: 0, scale: 1 }}
-                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                     className="absolute right-0 mt-2 w-80 bg-[#111] border border-[#222] rounded-3xl shadow-2xl z-[500] max-h-[400px] overflow-y-auto"
-                   >
-                      <div className="p-4 border-b border-[#222] flex justify-between items-center bg-[#161616]">
-                         <span className="text-sm font-bold text-white">Notifications</span>
-                         <Trophy className="w-4 h-4 text-brand-500" />
-                      </div>
-                      <div className="p-2">
-                        {notifications.length === 0 ? (
-                           <div className="p-8 text-center text-gray-500 text-sm">No notifications yet</div>
-                        ) : (
-                           notifications.map(notif => (
-                              <div 
-                                key={notif.id} 
-                                className={cn("p-3 rounded-2xl flex gap-3 mb-1 transition-colors cursor-pointer hover:bg-[#1a1a1a]", notif.read ? "opacity-100" : "bg-[#222]")}
-                                onClick={() => {
-                                  if (notif.type === 'message') {
-                                    setActiveTab("Chat");
-                                    setSelectedUser(notif.fromUserId);
-                                    setShowNotifications(false);
-                                  } else if (notif.type === 'follow') {
-                                    // Maybe navigate to profile? For now just close
-                                    setShowNotifications(false);
-                                  } else {
-                                    setActiveTab("Feed");
-                                    setShowNotifications(false);
-                                  }
-                                }}
-                              >
-                                 <img src={notif.fromUserAvatar} className="w-10 h-10 rounded-full shrink-0" />
-                                 <div className="flex-1">
-                                    <p className="text-sm text-gray-200">
-                                       <span className="font-bold text-white">{notif.fromUserName}</span>
-                                       {notif.type === 'like' && " liked your post"}
-                                       {notif.type === 'comment' && " commented on your post"}
-                                       {notif.type === 'follow' && " started following you"}
-                                       {notif.type === 'milestone' && ` reached a milestone: ${notif.targetId}`}
-                                       {notif.type === 'message' && " sent you a direct message"}
-                                    </p>
-                                    <p className="text-[10px] text-gray-500 mt-1 uppercase font-bold tracking-wider">
-                                       {notif.createdAt?.toDate ? format(notif.createdAt.toDate(), "MMM d, h:mm a") : "Just now"}
-                                    </p>
-                                 </div>
-                                 {!notif.read && <div className="w-2 h-2 bg-brand-500 rounded-full mt-2 shrink-0" />}
-                              </div>
-                           ))
-                        )}
-                      </div>
-                   </motion.div>
-                )}
-             </AnimatePresence>
-          </div>
+          <div className="flex items-center gap-2">
+              {incomingRequests.length > 0 && (
+                 <button 
+                   onClick={() => setActiveTab("Friends")}
+                   className="p-3 bg-brand-500/10 border border-brand-500/50 rounded-2xl text-brand-500 hover:bg-brand-500/20 transition-all flex items-center gap-2"
+                 >
+                   <UserPlus className="w-6 h-6" />
+                   <span className="text-xs font-bold">{incomingRequests.length}</span>
+                 </button>
+              )}
+              <div className="relative">
+                 <button 
+                   onClick={() => {
+                     setShowNotifications(!showNotifications);
+                     if (!showNotifications) markNotificationsRead();
+                   }} 
+                   className="p-3 bg-[#111] border border-[#222] rounded-2xl text-white hover:border-brand-500 transition-all relative"
+                 >
+                    <Bell className="w-6 h-6" />
+                    {unreadNotifications > 0 && (
+                       <span className="absolute top-2 right-2 w-4 h-4 bg-brand-500 text-black text-[10px] font-bold rounded-full flex items-center justify-center">
+                         {unreadNotifications}
+                       </span>
+                    )}
+                 </button>
+                 
+                 <AnimatePresence>
+                    {showNotifications && (
+                       <motion.div 
+                         initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                         animate={{ opacity: 1, y: 0, scale: 1 }}
+                         exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                         className="absolute right-0 mt-2 w-80 bg-[#111] border border-[#222] rounded-3xl shadow-2xl z-[500] max-h-[400px] overflow-y-auto"
+                       >
+                          <div className="p-4 border-b border-[#222] flex justify-between items-center bg-[#161616]">
+                             <span className="text-sm font-bold text-white">Notifications</span>
+                             <Trophy className="w-4 h-4 text-brand-500" />
+                          </div>
+                          <div className="p-2">
+                            {notifications.length === 0 ? (
+                               <div className="p-8 text-center text-gray-500 text-sm">No notifications yet</div>
+                            ) : (
+                               notifications.map(notif => (
+                                  <div 
+                                    key={notif.id} 
+                                    className={cn("p-3 rounded-2xl flex gap-3 mb-1 transition-colors cursor-pointer hover:bg-[#1a1a1a]", notif.read ? "opacity-100" : "bg-[#222]")}
+                                    onClick={() => {
+                                      if (notif.type === 'message') {
+                                        setActiveTab("Chat");
+                                        setSelectedUser(notif.fromUserId);
+                                        setShowNotifications(false);
+                                      } else if (notif.type === 'friend_request') {
+                                        setActiveTab("Friends");
+                                        setShowNotifications(false);
+                                      } else if (notif.type === 'follow') {
+                                        // Maybe navigate to profile? For now just close
+                                        setShowNotifications(false);
+                                      } else {
+                                        setActiveTab("Feed");
+                                        setShowNotifications(false);
+                                      }
+                                    }}
+                                  >
+                                     <img src={notif.fromUserAvatar} className="w-10 h-10 rounded-full shrink-0" />
+                                     <div className="flex-1">
+                                        <p className="text-sm text-gray-200">
+                                           <span className="font-bold text-white">{notif.fromUserName}</span>
+                                           {notif.type === 'like' && " liked your post"}
+                                           {notif.type === 'comment' && " commented on your post"}
+                                           {notif.type === 'follow' && " started following you"}
+                                           {notif.type === 'milestone' && ` reached a milestone: ${notif.targetId}`}
+                                           {notif.type === 'message' && " sent you a direct message"}
+                                           {notif.type === 'friend_request' && " sent you a friend request"}
+                                           {notif.type === 'friend_accept' && " accepted your friend request"}
+                                        </p>
+                                        <p className="text-[10px] text-gray-500 mt-1 uppercase font-bold tracking-wider">
+                                           {notif.createdAt?.toDate ? format(notif.createdAt.toDate(), "MMM d, h:mm a") : "Just now"}
+                                        </p>
+                                     </div>
+                                     {!notif.read && <div className="w-2 h-2 bg-brand-500 rounded-full mt-2 shrink-0" />}
+                                  </div>
+                               ))
+                            )}
+                          </div>
+                       </motion.div>
+                    )}
+                 </AnimatePresence>
+              </div>
+           </div>
         </div>
         <div className="flex bg-[#111] border border-[#222] p-1 rounded-xl">
           {TABS.map(tab => (
@@ -688,9 +782,25 @@ export default function Community() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0 select-text pr-2 -mr-2">
+      <div className="flex-1 overflow-y-auto min-0 select-text pr-2 -mr-2">
         {activeTab === "Feed" && (
           <div className="space-y-6 pb-6">
+            <div className="flex justify-between items-center px-1">
+              <h3 className="text-white font-display font-bold text-lg">Activity Feed</h3>
+              <button 
+                onClick={() => setFriendsOnly(!friendsOnly)}
+                className={cn(
+                  "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all border",
+                  friendsOnly 
+                    ? "bg-brand-500 border-brand-500 text-black shadow-[0_0_15px_rgba(204,255,0,0.3)]" 
+                    : "bg-[#111] border-[#222] text-gray-400 hover:text-white"
+                )}
+              >
+                <Filter className="w-3.5 h-3.5" />
+                {friendsOnly ? "Friends Only" : "Everyone"}
+              </button>
+            </div>
+            
             <div className="bg-[#111] border border-[#222] rounded-3xl p-4 flex gap-3">
               <img src={user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.displayName}`} alt="Avatar" className="w-10 h-10 rounded-full shrink-0" />
               <div className="flex-1">
@@ -710,10 +820,13 @@ export default function Community() {
 
             {feedPosts.length === 0 ? (
                <div className="bg-[#111] border border-[#222] rounded-3xl p-8 text-center text-gray-500 font-medium">
-                  No public activities to show yet.
+                  {friendsOnly ? "No friend activities yet. Start adding friends!" : "No public activities to show yet."}
                </div>
             ) : (
-                feedPosts.slice(0, displayCount).map(post => (
+                feedPosts
+                  .filter(post => !friendsOnly || friendshipIds.has(post.user.id) || post.user.id === user.uid)
+                  .slice(0, displayCount)
+                  .map(post => (
                   <motion.div key={post.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-[#111] border border-[#222] rounded-3xl overflow-hidden">
                     <div className="p-4 flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -965,15 +1078,119 @@ export default function Community() {
 
         {/* Chat area removed - moved to separate Messages page */}
         
+        {activeTab === "Friends" && (
+          <div className="space-y-8 pb-6">
+            {incomingRequests.length > 0 && (
+               <div>
+                  <h3 className="text-brand-500 font-display font-bold uppercase tracking-widest text-xs mb-4">Friend Requests</h3>
+                  <div className="space-y-2">
+                    {incomingRequests.map(req => {
+                       const sender = users.find(u => u.id === req.fromUserId);
+                       return (
+                        <div key={req.id} className="bg-[#111] border border-[#222] rounded-2xl p-4 flex items-center justify-between">
+                           <div className="flex items-center gap-3">
+                              <img src={sender?.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${sender?.displayName}`} className="w-10 h-10 rounded-full" />
+                              <div>
+                                 <p className="text-white font-bold">{sender?.displayName || "Athlete"}</p>
+                                 <p className="text-xs text-gray-500">Sent a friend request</p>
+                              </div>
+                           </div>
+                           <div className="flex gap-2">
+                              <button onClick={() => handleAcceptFriendRequest(req)} className="bg-brand-500 text-black px-4 py-2 rounded-xl text-xs font-bold hover:bg-brand-400">Accept</button>
+                              <button onClick={() => handleRejectFriendRequest(req.id)} className="bg-[#222] text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-[#333]">Decline</button>
+                           </div>
+                        </div>
+                       );
+                    })}
+                  </div>
+               </div>
+            )}
+
+            <div>
+               <h3 className="text-white font-display font-bold text-xl mb-4">Your Friends</h3>
+               {friendshipIds.size === 0 ? (
+                 <div className="bg-[#111] border border-[#222] rounded-3xl p-12 text-center">
+                    <Users className="w-12 h-12 text-gray-700 mx-auto mb-4" />
+                    <p className="text-gray-500 font-medium mb-4">You haven't added any friends yet.</p>
+                    <button onClick={() => setActiveTab("Leaderboard")} className="text-brand-500 text-sm font-bold border border-brand-500/30 px-6 py-2 rounded-full hover:bg-brand-500/10 transition-all">Find People</button>
+                 </div>
+               ) : (
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {users.filter(u => friendshipIds.has(u.id)).map(friend => (
+                      <div key={friend.id} className="bg-[#111] border border-[#222] rounded-2xl p-4 flex items-center justify-between group">
+                         <div className="flex items-center gap-3">
+                            <img src={friend.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${friend.displayName}`} className="w-10 h-10 rounded-full" />
+                            <div>
+                               <p className="text-white font-bold">{friend.displayName}</p>
+                               <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Level {friend.level || 1}</p>
+                            </div>
+                         </div>
+                         <button 
+                           onClick={() => handleRemoveFriend(friend.id)}
+                           className="p-2 text-gray-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                         >
+                           <UserX className="w-5 h-5" />
+                         </button>
+                      </div>
+                    ))}
+                 </div>
+               )}
+            </div>
+
+            <div>
+               <h3 className="text-white font-display font-bold text-xl mb-4">Find Athletes</h3>
+               <div className="space-y-2">
+                  {users.filter(u => !friendshipIds.has(u.id)).slice(0, 5).map(u => (
+                    <div key={u.id} className="bg-[#111] border border-[#222] rounded-2xl p-4 flex items-center justify-between">
+                       <div className="flex items-center gap-3">
+                          <img src={u.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${u.displayName}`} className="w-10 h-10 rounded-full" />
+                          <p className="text-white font-bold">{u.displayName}</p>
+                       </div>
+                       {outgoingRequests.has(u.id) ? (
+                          <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest bg-[#222] px-3 py-1.5 rounded-full">Request Sent</span>
+                       ) : (
+                          <button 
+                            onClick={() => handleSendFriendRequest(u.id)}
+                            className="bg-brand-500 text-black px-4 py-2 rounded-xl text-xs font-bold hover:bg-brand-400 flex items-center gap-2"
+                          >
+                            <UserPlus className="w-4 h-4" /> Add Friend
+                          </button>
+                       )}
+                    </div>
+                  ))}
+               </div>
+            </div>
+          </div>
+        )}
+
         {activeTab === "Leaderboard" && (                
           <div className="bg-[#111] border border-[#222] rounded-3xl p-6 min-h-[400px]">
              <h3 className="text-white font-display font-bold text-xl mb-6">Top Athletes</h3>
              {leaderboardData().map((stats, i) => (
-                 <div key={stats.uid} className="flex items-center gap-4 mb-4 p-3 bg-[#222] rounded-xl">
+                 <div key={stats.uid} className="flex items-center gap-4 mb-4 p-3 bg-[#222] rounded-xl group transition-all hover:bg-[#282828]">
                     <span className="font-bold text-gray-500 w-6">#{i + 1}</span>
                     <img src={stats.avatar} className="w-10 h-10 rounded-full" />
-                    <span className="text-white font-semibold flex-1">{stats.name}</span>
-                    <span className="text-brand-500 font-bold">{formatDistance(stats.distance)}</span>
+                    <div className="flex-1">
+                       <span className="text-white font-semibold flex items-center gap-2">
+                          {stats.name}
+                          {friendshipIds.has(stats.uid) && <UserCheck className="w-3.5 h-3.5 text-brand-500" />}
+                       </span>
+                       <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">{formatDistance(stats.distance)} Total</p>
+                    </div>
+                    {user.uid !== stats.uid && !friendshipIds.has(stats.uid) && (
+                       outgoingRequests.has(stats.uid) ? (
+                          <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest bg-[#111] px-3 py-1.5 rounded-full border border-[#222]">Sent</span>
+                       ) : (
+                          <button 
+                            onClick={() => handleSendFriendRequest(stats.uid)}
+                            className="bg-brand-500/10 border border-brand-500/50 text-brand-500 hover:bg-brand-500 hover:text-black transition-all p-2 rounded-xl"
+                            title="Add Friend"
+                          >
+                             <UserPlus className="w-4 h-4" />
+                          </button>
+                       )
+                    )}
+                    <span className="text-brand-500 font-bold hidden md:block">{formatDistance(stats.distance)}</span>
                  </div>
              ))}
           </div>                

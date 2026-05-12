@@ -31,24 +31,21 @@ export default function Messages() {
   const [users, setUsers] = useState<ChatUser[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [allLatestMessages, setAllLatestMessages] = useState<Record<string, ChatMessage>>({});
   const [newMessage, setNewMessage] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [isMobileListVisible, setIsMobileListVisible] = useState(true);
   
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Fetch all users to start conversations
+  // Fetch all users
   useEffect(() => {
     if (!user) return;
     const fetchUsers = async () => {
       try {
         const q = query(collection(db, "users"), where("__name__", "!=", user.uid));
         const snap = await getDocs(q);
-        const usersData = snap.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        } as ChatUser));
-        setUsers(usersData);
+        setUsers(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ChatUser)));
       } catch (e) {
         handleFirestoreError(e, OperationType.LIST, "users");
       }
@@ -56,35 +53,57 @@ export default function Messages() {
     fetchUsers();
   }, [user]);
 
-  // Listen to messages for the selected conversation
+  // Listen to ALL messages for this user to populate last messages in sidebar
   useEffect(() => {
-    if (!user || !selectedUserId) {
-        setMessages([]);
-        return;
-    }
+    if (!user) return;
 
     const q = query(
       collection(db, "messages"),
-      where("from", "in", [user.uid, selectedUserId]),
-      where("to", "in", [user.uid, selectedUserId]),
-      orderBy("createdAt", "asc")
+      where("participants", "array-contains", user.uid),
+      orderBy("createdAt", "desc")
     );
 
     const unsubscribe = onSnapshot(q, (snap) => {
-      const msgs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as ChatMessage));
-      setMessages(msgs);
-      
-      // Mark unread messages as read
-      const unread = snap.docs.filter(d => d.data().to === user.uid && !d.data().read);
-      unread.forEach(d => {
-        updateDoc(doc(db, "messages", d.id), { read: true });
+      const latest: Record<string, ChatMessage> = {};
+      snap.docs.forEach(doc => {
+        const msg = { id: doc.id, ...doc.data() } as ChatMessage;
+        const otherId = msg.from === user.uid ? msg.to : msg.from;
+        if (!latest[otherId]) {
+          latest[otherId] = msg;
+        }
       });
+      setAllLatestMessages(latest);
+
+      // If there's a selected user, update the main message thread too
+      if (selectedUserId) {
+         const threadMsgs = snap.docs
+           .map(doc => ({ id: doc.id, ...doc.data() } as ChatMessage))
+           .filter(m => (m.from === selectedUserId && m.to === user.uid) || (m.from === user.uid && m.to === selectedUserId))
+           .sort((a,b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
+         
+         setMessages(threadMsgs);
+
+         // Mark unread as read
+         snap.docs.forEach(d => {
+            const data = d.data();
+            if (data.to === user.uid && data.from === selectedUserId && !data.read) {
+               updateDoc(doc(db, "messages", d.id), { read: true });
+            }
+         });
+      }
     }, (e) => {
         handleFirestoreError(e, OperationType.LIST, "messages");
     });
 
     return () => unsubscribe();
   }, [user, selectedUserId]);
+
+  useEffect(() => {
+    if (selectedUserId && !allLatestMessages[selectedUserId]) {
+        // Clear messages if switching to someone with no history yet
+        // but we are already filtering in the listener above.
+    }
+  }, [selectedUserId]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -100,6 +119,7 @@ export default function Messages() {
       await addDoc(collection(db, "messages"), {
         from: user.uid,
         to: selectedUserId,
+        participants: [user.uid, selectedUserId],
         text: newMessage.trim(),
         createdAt: serverTimestamp(),
         read: false
@@ -166,10 +186,19 @@ export default function Messages() {
                 <div className="flex-1 text-left min-w-0">
                   <div className="flex justify-between items-start mb-0.5">
                     <p className="font-bold text-white truncate">{u.displayName}</p>
-                    <span className="text-[10px] text-gray-500">12:45 PM</span>
+                    <span className="text-[10px] text-gray-500">
+                      {allLatestMessages[u.id]?.createdAt?.toDate ? formatDistanceToNow(allLatestMessages[u.id].createdAt.toDate(), { addSuffix: false }) : ""}
+                    </span>
                   </div>
-                  <p className="text-xs text-gray-400 truncate">Hey! Great run earlier today...</p>
+                  <p className="text-xs text-gray-400 truncate">
+                    {allLatestMessages[u.id] 
+                      ? (allLatestMessages[u.id].from === user?.uid ? "You: " : "") + allLatestMessages[u.id].text
+                      : "Start a conversation"}
+                  </p>
                 </div>
+                {allLatestMessages[u.id] && !allLatestMessages[u.id].read && allLatestMessages[u.id].to === user?.uid && (
+                   <div className="w-2 h-2 bg-brand-500 rounded-full"></div>
+                )}
               </button>
             ))
           )}

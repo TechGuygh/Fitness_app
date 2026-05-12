@@ -21,6 +21,7 @@ export default function Profile() {
   const { user } = useAuth();
   const [profileData, setProfileData] = useState<any>(null);
   const [weeklyGoal, setWeeklyGoal] = useState<any>(null);
+  const [friends, setFriends] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [stats, setStats] = useState({
@@ -91,12 +92,31 @@ export default function Profile() {
           setStats(prev => ({ ...prev, following: snap.size }));
       });
 
+      const unsubFriends = onSnapshot(query(collection(db, "friendships"), where("userIds", "array-contains", user.uid)), async (snap) => {
+        const friendIds = snap.docs.map(doc => {
+           const ids = doc.data().userIds as string[];
+           return ids.find(id => id !== user.uid);
+        }).filter(Boolean) as string[];
+
+        if (friendIds.length > 0) {
+           const qUsers = query(collection(db, "users")); // Simple way, optimized would be where('uid', 'in', friendIds) but firestore has limits
+           const userSnap = await getDocs(qUsers);
+           const friendProfiles = userSnap.docs
+             .map(d => ({ id: d.id, ...d.data() }))
+             .filter(u => friendIds.includes(u.id));
+           setFriends(friendProfiles);
+        } else {
+           setFriends([]);
+        }
+      });
+
       return () => {
         unsubUser();
         unsubGoal();
         unsubActivities();
         unsubFollowers();
         unsubFollowing();
+        unsubFriends();
       };
     }
   }, [user]);
@@ -192,7 +212,38 @@ export default function Profile() {
         </button>
       </div>
 
-      {/* Lifetime Stats */}
+      {/* Friends List */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-display font-semibold text-xl text-white">Your Friends</h3>
+          <span className="text-xs font-bold text-gray-500 bg-[#111] border border-[#222] px-3 py-1 rounded-full uppercase tracking-wider">
+            {friends.length} Connections
+          </span>
+        </div>
+        <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-4 px-4">
+           {friends.length === 0 ? (
+             <p className="text-gray-500 text-sm">No friends added yet.</p>
+           ) : (
+             friends.map((friend, i) => (
+               <motion.div 
+                 key={friend.id} 
+                 initial={{ opacity: 0, scale: 0.8 }} 
+                 animate={{ opacity: 1, scale: 1 }} 
+                 transition={{ delay: i * 0.05 }}
+                 className="flex flex-col items-center shrink-0 w-20"
+               >
+                 <div className="w-16 h-16 rounded-full p-0.5 border border-[#333] mb-2">
+                    <img src={friend.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${friend.displayName}`} className="w-full h-full rounded-full object-cover" />
+                 </div>
+                 <p className="text-[10px] text-white font-bold text-center line-clamp-1">{friend.displayName.split(' ')[0]}</p>
+                 <p className="text-[8px] text-brand-500 font-bold uppercase tracking-widest text-center">LVL {friend.level || 1}</p>
+               </motion.div>
+             ))
+           )}
+        </div>
+      </div>
+
+      {/* Weekly Performance */}
       <div>
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-display font-semibold text-xl text-white">Weekly Performance</h3>
