@@ -20,6 +20,7 @@ const BADGES = [
 export default function Profile() {
   const { user } = useAuth();
   const [profileData, setProfileData] = useState<any>(null);
+  const [weeklyGoal, setWeeklyGoal] = useState<any>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [stats, setStats] = useState({
@@ -58,6 +59,10 @@ export default function Profile() {
         if (doc.exists()) setProfileData(doc.data());
       });
 
+      const unsubGoal = onSnapshot(doc(db, "goals", user.uid), (doc) => {
+        if (doc.exists()) setWeeklyGoal(doc.data());
+      });
+
       const qActivities = query(collection(db, "activities"), where("userId", "==", user.uid));
       const unsubActivities = onSnapshot(qActivities, (snap) => {
           let dist = 0;
@@ -88,6 +93,7 @@ export default function Profile() {
 
       return () => {
         unsubUser();
+        unsubGoal();
         unsubActivities();
         unsubFollowers();
         unsubFollowing();
@@ -187,6 +193,55 @@ export default function Profile() {
       </div>
 
       {/* Lifetime Stats */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-display font-semibold text-xl text-white">Weekly Performance</h3>
+          {weeklyGoal && (
+             <span className="text-xs font-bold text-brand-500 bg-brand-500/10 px-3 py-1 rounded-full uppercase tracking-wider">
+               Goal: {weeklyGoal.target} {weeklyGoal.type === 'distance' ? 'km' : weeklyGoal.type === 'frequency' ? 'days' : weeklyGoal.type === 'calories' ? 'kcal' : 'mins'}
+             </span>
+          )}
+        </div>
+        {!weeklyGoal ? (
+          <div className="bg-[#111] border border-[#222] border-dashed rounded-2xl p-6 text-center">
+            <p className="text-gray-500 text-sm mb-3">No active goal set for this week.</p>
+            <button onClick={() => window.location.href = '/'} className="text-brand-500 text-xs font-bold hover:underline">SET A GOAL</button>
+          </div>
+        ) : (
+          <div className="bg-[#111] border border-[#222] rounded-2xl p-6 relative overflow-hidden group">
+             <div className="absolute top-0 right-0 p-24 bg-brand-500/5 blur-[60px] rounded-full group-hover:bg-brand-500/10 transition-colors"></div>
+             <div className="flex justify-between items-center mb-6 relative z-10">
+                <div>
+                   <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest mb-1">Current Progress</p>
+                   {weeklyGoal.type === 'distance' && (
+                     <p className="text-2xl font-display font-bold text-white">{formatDistance(stats.totalKm)} <span className="text-sm text-gray-500 font-normal italic">this week</span></p>
+                   )}
+                   {weeklyGoal.type === 'frequency' && (
+                     <p className="text-2xl font-display font-bold text-white">{stats.totalActivities} <span className="text-sm text-gray-500 font-normal italic">sessions</span></p>
+                   )}
+                   {weeklyGoal.type === 'calories' && (
+                     <p className="text-2xl font-display font-bold text-white">{Math.floor(stats.calories).toLocaleString()} <span className="text-sm text-gray-500 font-normal italic">kcal</span></p>
+                   )}
+                   {weeklyGoal.type === 'time' && (
+                     <p className="text-2xl font-display font-bold text-white">{stats.activeHours.toFixed(1)} <span className="text-sm text-gray-500 font-normal italic">hours</span></p>
+                   )}
+                </div>
+                <div className="text-right">
+                   <p className="text-3xl font-display font-bold text-brand-500">{Math.min(100, Math.round((stats.totalKm / (weeklyGoal.target || 1)) * 100))}%</p>
+                   <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">Efficiency</p>
+                </div>
+             </div>
+             <div className="h-2 w-full bg-[#222] rounded-full overflow-hidden relative z-10">
+                <motion.div 
+                  initial={{ width: 0 }} 
+                  animate={{ width: `${Math.min(100, (stats.totalKm / (weeklyGoal.target || 1)) * 100)}%` }} 
+                  className="h-full bg-brand-500" 
+                />
+             </div>
+          </div>
+        )}
+      </div>
+
       <div>
         <h3 className="font-display font-semibold text-xl text-white mb-4">Lifetime Stats</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

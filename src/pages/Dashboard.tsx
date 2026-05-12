@@ -2,13 +2,15 @@ import { format, subDays, startOfDay, isAfter } from "date-fns";
 import { Play, TrendingUp, Flame, MapPin, ChevronRight, Activity as ActivityIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 import { AreaChart, Area, ResponsiveContainer, XAxis, Tooltip } from "recharts";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/src/components/auth/AuthProvider";
 import { useState, useEffect, useMemo } from "react";
 import { collection, query, where, orderBy, getDocs, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "@/src/lib/firebase";
 import { handleFirestoreError, OperationType } from "@/src/lib/firebase-error";
 import { Settings, Target, Zap, Clock, Trophy } from "lucide-react";
+import { cn } from "@/src/lib/utils";
+import Auth from "./Auth";
 
 import { formatDistance } from "@/src/lib/utils";
 
@@ -187,6 +189,24 @@ export default function Dashboard() {
                        </div>
                      </button>
                    ))}
+                </div>
+
+                <div className="mb-8">
+                  <p className="text-[10px] text-gray-500 uppercase font-bold tracking-widest ml-1 mb-3">Quick Presets</p>
+                  <div className="flex flex-wrap gap-2">
+                    {weeklyGoal.type === 'distance' && [5, 10, 21, 42].map(v => (
+                      <button key={v} onClick={() => setWeeklyGoal(prev => ({ ...prev, target: v }))} className={cn("px-4 py-2 rounded-xl border text-xs font-bold transition-all", weeklyGoal.target === v ? "bg-brand-500 border-brand-500 text-black" : "bg-[#222] border-[#333] text-gray-400 hover:text-white")}>{v}km</button>
+                    ))}
+                    {weeklyGoal.type === 'frequency' && [3, 4, 5, 7].map(v => (
+                      <button key={v} onClick={() => setWeeklyGoal(prev => ({ ...prev, target: v }))} className={cn("px-4 py-2 rounded-xl border text-xs font-bold transition-all", weeklyGoal.target === v ? "bg-brand-500 border-brand-500 text-black" : "bg-[#222] border-[#333] text-gray-400 hover:text-white")}>{v} sessions</button>
+                    ))}
+                    {weeklyGoal.type === 'calories' && [500, 1000, 2500, 5000].map(v => (
+                      <button key={v} onClick={() => setWeeklyGoal(prev => ({ ...prev, target: v }))} className={cn("px-4 py-2 rounded-xl border text-xs font-bold transition-all", weeklyGoal.target === v ? "bg-brand-500 border-brand-500 text-black" : "bg-[#222] border-[#333] text-gray-400 hover:text-white")}>{v}kcal</button>
+                    ))}
+                    {weeklyGoal.type === 'time' && [60, 120, 300, 600].map(v => (
+                      <button key={v} onClick={() => setWeeklyGoal(prev => ({ ...prev, target: v }))} className={cn("px-4 py-2 rounded-xl border text-xs font-bold transition-all", weeklyGoal.target === v ? "bg-brand-500 border-brand-500 text-black" : "bg-[#222] border-[#333] text-gray-400 hover:text-white")}>{v}min</button>
+                    ))}
+                  </div>
                 </div>
 
                 <button 
