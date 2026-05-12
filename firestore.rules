@@ -1,0 +1,165 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} { allow read, write: if false; }
+    
+    // Global Primitives
+    function isValidId(id) { return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+
+    function isValidUserCreate(data) {
+      return data.keys().hasAll(['displayName', 'joinedAt']) &&
+             data.keys().size() >= 2 && data.keys().size() <= 7 &&
+             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 100 &&
+             data.joinedAt == request.time &&
+             (!data.keys().hasAny(['photoURL']) || (data.photoURL is string && data.photoURL.size() <= 1000)) &&
+             (!data.keys().hasAny(['level']) || data.level is number) &&
+             (!data.keys().hasAny(['totalKm']) || data.totalKm is number) &&
+             (!data.keys().hasAny(['activeHours']) || data.activeHours is number) &&
+             (!data.keys().hasAny(['calories']) || data.calories is number);
+    }
+    
+    function isValidActivityCreate(data) {
+       return data.keys().hasAll(['userId', 'distance', 'timeSeconds', 'createdAt']) &&
+              data.keys().size() >= 4 && data.keys().size() <= 8 &&
+              data.distance is number &&
+              data.timeSeconds is number &&
+              data.userId == request.auth.uid &&
+              data.createdAt == request.time &&
+              (!data.keys().hasAny(['activityType']) || (data.activityType is string && data.activityType.size() <= 20)) &&
+              (!data.keys().hasAny(['pace']) || data.pace is number) &&
+              (!data.keys().hasAny(['status']) || (data.status is string && data.status.size() <= 20)) &&
+              (!data.keys().hasAny(['updatedAt']) || data.updatedAt == request.time);
+    }
+
+    function isValidPostCreate(data) {
+       return data.keys().hasAll(['userId', 'content', 'createdAt']) &&
+              data.keys().size() >= 3 && data.keys().size() <= 6 &&
+              data.userId == request.auth.uid &&
+              data.content is string && data.content.size() > 0 && data.content.size() <= 5000 &&
+              data.createdAt == request.time &&
+              (!data.keys().hasAny(['userName']) || (data.userName is string && data.userName.size() <= 100)) &&
+              (!data.keys().hasAny(['userAvatar']) || (data.userAvatar is string && data.userAvatar.size() <= 1000)) &&
+              (!data.keys().hasAny(['likes']) || data.likes is number);
+    }
+
+    function isValidChallengeCreate(data) {
+       return data.keys().hasAll(['creatorId', 'title', 'createdAt']) &&
+              data.keys().size() >= 3 && data.keys().size() <= 8 &&
+              data.creatorId == request.auth.uid &&
+              data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+              data.createdAt == request.time &&
+              (!data.keys().hasAny(['goal']) || (data.goal is string && data.goal.size() <= 500)) &&
+              (!data.keys().hasAny(['participants']) || data.participants is number) &&
+              (!data.keys().hasAny(['daysLeft']) || data.daysLeft is number) &&
+              (!data.keys().hasAny(['progress']) || data.progress is number) &&
+              (!data.keys().hasAny(['color']) || (data.color is string && data.color.size() <= 50));
+    }
+
+    function isValidMessageCreate(data) {
+       return data.keys().hasAll(['userId', 'text', 'createdAt']) &&
+              data.keys().size() >= 3 && data.keys().size() <= 7 &&
+              data.userId == request.auth.uid &&
+              data.text is string && data.text.size() > 0 && data.text.size() <= 1000 &&
+              data.createdAt == request.time &&
+              (!data.keys().hasAny(['userName']) || (data.userName is string && data.userName.size() <= 100)) &&
+              (!data.keys().hasAny(['userAvatar']) || (data.userAvatar is string && data.userAvatar.size() <= 1000)) &&
+              (!data.keys().hasAny(['from']) || (data.from is string && data.from.size() <= 128)) &&
+              (!data.keys().hasAny(['to']) || (data.to is string && data.to.size() <= 128));
+    }
+
+    function isValidCommentCreate(data) {
+       return data.keys().hasAll(['parentId', 'userId', 'text', 'createdAt']) &&
+              data.keys().size() >= 4 && data.keys().size() <= 6 &&
+              data.userId == request.auth.uid &&
+              data.parentId is string && data.parentId.size() > 0 && data.parentId.size() <= 128 &&
+              data.text is string && data.text.size() > 0 && data.text.size() <= 1000 &&
+              data.createdAt == request.time &&
+              (!data.keys().hasAny(['userName']) || (data.userName is string && data.userName.size() <= 100)) &&
+              (!data.keys().hasAny(['userAvatar']) || (data.userAvatar is string && data.userAvatar.size() <= 1000));
+    }
+
+    function isLikeAction(existingDoc, incomingDoc) {
+      return incomingDoc.diff(existingDoc).affectedKeys().hasOnly(['likes']) &&
+             incomingDoc.likes is number &&
+             (incomingDoc.likes == existingDoc.get('likes', 0) + 1 || incomingDoc.likes == existingDoc.get('likes', 0) - 1);
+    }
+
+    function isValidFollowCreate(data) {
+       return data.keys().hasAll(['followerId', 'followingId', 'createdAt']) &&
+              data.keys().size() == 3 &&
+              data.followerId == request.auth.uid &&
+              data.followingId is string && data.followingId.size() > 0 && data.followingId.size() <= 128 &&
+              data.createdAt == request.time;
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId);
+      allow list: if false; 
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidUserCreate(incoming());
+      allow update: if isSignedIn() && request.auth.uid == userId && isValidId(userId) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'level', 'totalKm', 'activeHours', 'calories']);
+    }
+
+    match /activities/{activityId} {
+      allow get: if isSignedIn() && isValidId(activityId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(activityId) && isValidActivityCreate(incoming());
+      allow update: if (
+        isSignedIn() && isValidId(activityId) && (
+          (
+            existing().userId == request.auth.uid && 
+            incoming().userId == existing().userId &&
+            existing().get('status', '') != 'finished' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['distance', 'timeSeconds', 'pace', 'status', 'updatedAt']) &&
+            incoming().updatedAt == request.time &&
+            ( !incoming().diff(existing()).affectedKeys().hasAny(['status']) || (incoming().status is string && incoming().status.size() <= 20) )
+          ) ||
+          isLikeAction(existing(), incoming())
+        )
+      );
+      allow delete: if isSignedIn() && isValidId(activityId) && existing().userId == request.auth.uid;
+    }
+
+    match /posts/{postId} {
+      allow get: if isSignedIn() && isValidId(postId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(postId) && isValidPostCreate(incoming());
+      allow update: if isSignedIn() && isValidId(postId) && (
+          (existing().userId == request.auth.uid && incoming().userId == existing().userId && incoming().diff(existing()).affectedKeys().hasOnly(['content'])) ||
+          isLikeAction(existing(), incoming())
+      );
+      allow delete: if isSignedIn() && isValidId(postId) && existing().userId == request.auth.uid;
+    }
+
+    match /challenges/{challengeId} {
+      allow get: if isSignedIn() && isValidId(challengeId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(challengeId) && isValidChallengeCreate(incoming());
+      allow update: if isSignedIn() && isValidId(challengeId) && incoming().diff(existing()).affectedKeys().hasOnly(['participants']);
+      allow delete: if isSignedIn() && isValidId(challengeId) && existing().creatorId == request.auth.uid;
+    }
+
+    match /messages/{messageId} {
+      allow get: if isSignedIn() && isValidId(messageId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(messageId) && isValidMessageCreate(incoming());
+    }
+
+    match /comments/{commentId} {
+      allow get: if isSignedIn() && isValidId(commentId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(commentId) && isValidCommentCreate(incoming());
+      allow delete: if isSignedIn() && isValidId(commentId) && existing().userId == request.auth.uid;
+    }
+
+    match /follows/{followId} {
+      allow get: if isSignedIn() && isValidId(followId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(followId) && isValidFollowCreate(incoming());
+      allow delete: if isSignedIn() && isValidId(followId) && existing().followerId == request.auth.uid;
+    }
+  }
+}

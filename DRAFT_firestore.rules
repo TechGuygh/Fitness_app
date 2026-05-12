@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} { allow read, write: if false; }
+    
+    // Global Primitives
+    function isValidId(id) { return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['displayName', 'joinedAt']) &&
+             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 100 &&
+             data.joinedAt == request.time &&
+             (!data.keys().hasAny(['photoURL']) || data.photoURL is string) &&
+             (!data.keys().hasAny(['level']) || data.level is number) &&
+             (!data.keys().hasAny(['totalKm']) || data.totalKm is number) &&
+             (!data.keys().hasAny(['activeHours']) || data.activeHours is number) &&
+             (!data.keys().hasAny(['calories']) || data.calories is number);
+    }
+    
+    function isValidActivityCreate(data) {
+       return data.keys().hasAll(['userId', 'distance', 'timeSeconds', 'createdAt']) &&
+              data.distance is number &&
+              data.timeSeconds is number &&
+              data.userId == request.auth.uid &&
+              data.createdAt == request.time &&
+              (!data.keys().hasAny(['activityType']) || data.activityType is string) &&
+              (!data.keys().hasAny(['pace']) || data.pace is number) &&
+              (!data.keys().hasAny(['status']) || data.status is string) &&
+              (!data.keys().hasAny(['updatedAt']) || data.updatedAt == request.time);
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId);
+      allow list: if false; 
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidUser(incoming());
+      allow update: if isSignedIn() && request.auth.uid == userId && isValidId(userId) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'level', 'totalKm', 'activeHours', 'calories']);
+    }
+
+    match /activities/{activityId} {
+      // Must enforce reading own activities only
+      allow get: if isSignedIn() && isValidId(activityId) && existing().userId == request.auth.uid;
+      // Must enforce filtering listing
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(activityId) && isValidActivityCreate(incoming());
+      allow update: if isSignedIn() && isValidId(activityId) && existing().userId == request.auth.uid && incoming().userId == existing().userId &&
+                    existing().get('status', '') != 'finished' &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['distance', 'timeSeconds', 'pace', 'status', 'updatedAt']) &&
+                    incoming().updatedAt == request.time;
+      allow delete: if isSignedIn() && isValidId(activityId) && existing().userId == request.auth.uid;
+    }
+  }
+}

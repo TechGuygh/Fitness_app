@@ -1,0 +1,134 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile with lifetime stats",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string", "description": "User's full name" },
+        "photoURL": { "type": "string" },
+        "level": { "type": "number" },
+        "joinedAt": { "type": "number", "description": "Timestamp" },
+        "totalKm": { "type": "number" },
+        "activeHours": { "type": "number" },
+        "calories": { "type": "number" }
+      },
+      "required": ["displayName", "joinedAt"]
+    },
+    "Activity": {
+      "title": "Workout Activity",
+      "description": "Recorded workout",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "activityType": { "type": "string", "enum": ["run", "cycle"] },
+        "distance": { "type": "number" },
+        "timeSeconds": { "type": "number" },
+        "pace": { "type": "number" },
+        "status": { "type": "string", "enum": ["tracking", "paused", "finished"] },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["userId", "distance", "timeSeconds", "createdAt"]
+    },
+    "Post": {
+      "title": "Community Post",
+      "description": "User post in the community feed",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userAvatar": { "type": "string" },
+        "content": { "type": "string" },
+        "likes": { "type": "number" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "content", "createdAt"]
+    },
+    "Challenge": {
+      "title": "Community Challenge",
+      "description": "User created challenge",
+      "type": "object",
+      "properties": {
+        "creatorId": { "type": "string" },
+        "title": { "type": "string" },
+        "goal": { "type": "string" },
+        "participants": { "type": "number" },
+        "daysLeft": { "type": "number" },
+        "progress": { "type": "number" },
+        "color": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["creatorId", "title", "createdAt"]
+    },
+    "Message": {
+      "title": "Chat Message",
+      "description": "Message in the global community chat or direct message",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userAvatar": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "from": { "type": "string" },
+        "to": { "type": "string" }
+      },
+      "required": ["userId", "text", "createdAt"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "A comment on a post or activity",
+      "type": "object",
+      "properties": {
+        "parentId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userAvatar": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["parentId", "userId", "text", "createdAt"]
+    },
+    "Follow": {
+      "title": "User Follow",
+      "type": "object",
+      "properties": {
+        "followerId": { "type": "string" },
+        "followingId": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["followerId", "followingId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Master list of users"
+    },
+    "/activities/{activityId}": {
+      "schema": { "$ref": "#/entities/Activity" },
+      "description": "User's workout activities"
+    },
+    "/posts/{postId}": {
+      "schema": { "$ref": "#/entities/Post" },
+      "description": "Community posts"
+    },
+    "/challenges/{challengeId}": {
+      "schema": { "$ref": "#/entities/Challenge" },
+      "description": "Community challenges"
+    },
+    "/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Community chat messages"
+    },
+    "/comments/{commentId}": {
+      "schema": { "$ref": "#/entities/Comment" },
+      "description": "Comments on posts or activities"
+    },
+    "/follows/{followId}": {
+      "schema": { "$ref": "#/entities/Follow" },
+      "description": "User follows"
+    }
+  }
+}

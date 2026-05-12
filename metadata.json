@@ -1,0 +1,8 @@
+{
+  "name": "Aero Fitness",
+  "description": "A premium, futuristic fitness tracking application with social integrations, real-time map tracking, and gamification.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": []
+}
