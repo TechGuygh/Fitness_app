@@ -1,16 +1,17 @@
 import { format, subDays, startOfDay, isAfter } from "date-fns";
-import { Play, TrendingUp, Flame, MapPin, ChevronRight, Activity as ActivityIcon } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Play, TrendingUp, Flame, MapPin, ChevronRight, Activity as ActivityIcon, PlusCircle } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
 import { AreaChart, Area, ResponsiveContainer, XAxis, Tooltip } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/src/components/auth/AuthProvider";
 import { useState, useEffect, useMemo } from "react";
-import { collection, query, where, orderBy, getDocs, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import { collection, query, where, orderBy, getDocs, doc, getDoc, setDoc, updateDoc, onSnapshot } from "firebase/firestore";
 import { db } from "@/src/lib/firebase";
 import { handleFirestoreError, OperationType } from "@/src/lib/firebase-error";
-import { Settings, Target, Zap, Clock, Trophy } from "lucide-react";
+import { Settings, Target, Zap, Clock, Trophy, Users } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import Auth from "./Auth";
+import RouteCreatorModal from "@/src/components/RouteCreatorModal";
 
 import { formatDistance } from "@/src/lib/utils";
 
@@ -20,8 +21,12 @@ interface WeeklyGoal {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const { user, logOut } = useAuth();
   const [activities, setActivities] = useState<any[]>([]);
+  const [routes, setRoutes] = useState<any[]>([]);
+  const [activeUsersByRoute, setActiveUsersByRoute] = useState<Record<string, any[]>>({});
+  const [isRouteCreatorOpen, setIsRouteCreatorOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
   const [savingGoal, setSavingGoal] = useState(false);
@@ -54,6 +59,53 @@ export default function Dashboard() {
         }
       }
       fetchData();
+
+      // Listen to routes
+      const qRoutes = query(collection(db, "activities"), where("isRoute", "==", true));
+      const unsubscribeRoutes = onSnapshot(qRoutes, async (snap) => {
+         const fetchedRoutes = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+         setRoutes(fetchedRoutes);
+
+         // Fetch recent activities that use these routeIds to count active/recent users
+         const userCounts: Record<string, any[]> = {};
+         for (const route of fetchedRoutes) {
+            try {
+              // Get activities with this routeId from the last 24h
+              const oneDayAgo = new Date();
+              oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+              const qUsers = query(collection(db, "activities"), where("routeId", "==", route.id));
+              const uSnap = await getDocs(qUsers);
+              
+              // Map user IDs
+              const uniqueUserIds = new Set<string>();
+              if ((route as any).userId) uniqueUserIds.add((route as any).userId);
+              uSnap.docs.forEach(doc => {
+                 if (doc.data().userId) uniqueUserIds.add(doc.data().userId);
+              });
+              
+              // Fetch user info for each unique user
+              const routeUsers: any[] = [];
+              for (const uid of Array.from(uniqueUserIds)) {
+                try {
+                  const userSnap = await getDoc(doc(db, "users", uid));
+                  if (userSnap.exists()) {
+                     routeUsers.push({ id: uid, ...userSnap.data() });
+                  }
+                } catch (e) {
+                   console.error(e);
+                }
+              }
+              userCounts[route.id] = routeUsers;
+            } catch (err) {
+              console.error("Error fetching users for route", route.id, err);
+            }
+         }
+         setActiveUsersByRoute(userCounts);
+      }, (error) => handleFirestoreError(error, OperationType.LIST, "activities"));
+
+      return () => {
+         unsubscribeRoutes();
+      };
     }
   }, [user]);
 
@@ -149,7 +201,7 @@ export default function Dashboard() {
 
   if (!user) return <Auth />;
 
-  const firstName = user.displayName?.split(" ")[0] || "Athlete";
+  const firstName = user.displayName === "Athlete" ? (user.email?.split("@")[0] || "User") : (user.displayName?.split(" ")[0] || user.email?.split("@")[0] || "User");
   const avatarUrl = user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${firstName}`;
 
   return (
@@ -419,7 +471,61 @@ export default function Dashboard() {
         </div>
         )}
       </div>
-      
+
+      {/* Routes Section */}
+      <div className="pb-10">
+         <div className="flex justify-between items-center mb-4">
+           <h3 className="font-display font-semibold text-lg text-gray-200">Community Favorites & Your Routes</h3>
+           <button onClick={() => setIsRouteCreatorOpen(true)} className="bg-[#222] text-brand-500 hover:bg-[#333] transition-colors p-2 rounded-xl flex items-center gap-2">
+             <PlusCircle className="w-5 h-5"/>
+             <span className="text-sm font-bold pr-2">Create Route</span>
+           </button>
+         </div>
+         {routes.length === 0 ? (
+            <div className="bg-[#111] border border-[#222] rounded-2xl p-6 text-center text-gray-500 font-medium">
+               No routes available yet. Create one!
+            </div>
+         ) : (
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+             {routes.map((route, i) => (
+                <motion.div 
+                  key={route.id}
+                  initial={{ opacity: 0, y: 20 }} 
+                  animate={{ opacity: 1, y: 0 }} 
+                  transition={{ delay: 0.5 + (i * 0.1) }}
+                  className="bg-[#111] border border-[#222] rounded-3xl p-5 flex items-center gap-4 hover:border-[#333] transition-colors"
+                >
+                   <div className="w-16 h-16 rounded-2xl bg-[#222] flex items-center justify-center shrink-0">
+                     <MapPin className="w-8 h-8 text-brand-500" />
+                   </div>                
+                   <div className="flex-1 min-w-0">
+                     <p className="text-white font-semibold truncate">{route.routeName || "Unnamed Route"}</p>
+                     <p className="text-gray-500 text-xs mt-1">{(route.distance || 0).toFixed(1)} km</p>
+                     {activeUsersByRoute[route.id] && activeUsersByRoute[route.id].length > 0 && (
+                       <div className="mt-3 flex items-center gap-2">
+                         <div className="flex -space-x-2">
+                           {activeUsersByRoute[route.id].slice(0, 3).map((rUser: any, i: number) => {
+                             const name = rUser.displayName === "Athlete" ? "User" : (rUser.displayName || "User");
+                             const ava = rUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`;
+                             return (
+                               <img key={i} src={ava} className="w-6 h-6 rounded-full border border-[#222]" title={name} />
+                             );
+                           })}
+                         </div>
+                         <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
+                           {activeUsersByRoute[route.id].length} Racer{activeUsersByRoute[route.id].length > 1 ? 's' : ''} here
+                         </span>
+                       </div>
+                     )}
+                   </div>
+                   <button onClick={() => navigate(`/activity?ghostId=${route.id}`)} className="bg-brand-500 text-black px-4 py-2 rounded-xl text-sm font-bold shadow-[0_5px_15px_rgba(204,255,0,0.15)] hover:bg-brand-400 shrink-0 transition-colors">Start</button>
+                </motion.div>
+             ))}
+           </div>
+         )}
+      </div>
+
+      <RouteCreatorModal isOpen={isRouteCreatorOpen} onClose={() => setIsRouteCreatorOpen(false)} />
     </div>
   );
 }

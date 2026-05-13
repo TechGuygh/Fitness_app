@@ -72,9 +72,11 @@
         "text": { "type": "string" },
         "createdAt": { "type": "number" },
         "from": { "type": "string" },
-        "to": { "type": "string" }
+        "to": { "type": "string" },
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "read": { "type": "boolean" }
       },
-      "required": ["userId", "text", "createdAt"]
+      "required": ["text", "createdAt"]
     },
     "Comment": {
       "title": "Comment",

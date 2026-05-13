@@ -142,6 +142,9 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     setWorkoutState("finished");
     if (user) {
       try {
+        const queryParams = new URLSearchParams(window.location.search);
+        const ghostId = queryParams.get("ghostId");
+
         const newDocRef = doc(collection(db, "activities"));
         await setDoc(newDocRef, {
           userId: user.uid,
@@ -153,6 +156,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
           status: "finished",
           updatedAt: serverTimestamp(),
           route: routePath,
+          ...(ghostId ? { routeId: ghostId } : {})
         });
         return newDocRef.id;
       } catch (e) {

@@ -7,14 +7,15 @@ import { db } from "@/src/lib/firebase";
 import { useAuth } from "@/src/components/auth/AuthProvider";
 import { handleFirestoreError, OperationType } from "@/src/lib/firebase-error";
 import { format } from "date-fns";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { formatDistance } from "@/src/lib/utils";
 import RouteCreatorModal from "@/src/components/RouteCreatorModal";
 
-const TABS = ["Feed", "Challenges", "Friends", "Leaderboard", "Routes"];
+const TABS = ["Feed", "Challenges", "Friends", "Leaderboard"];
 
 export default function Community() {
-  const [activeTab, setActiveTab] = useState("Feed");
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState(location.state?.activeTab || "Feed");
   const { user } = useAuth();
   const navigate = useNavigate();
   
@@ -197,7 +198,7 @@ export default function Community() {
             type: 'activity',
             user: {
                id: data.userId,
-               name: data.userId === user.uid ? (user.displayName || "Athlete") : (users.find(u => u.id === data.userId)?.displayName || "Athlete"),
+               name: data.userId === user.uid ? (user.displayName || "User") : (users.find(u => u.id === data.userId)?.displayName || "User"),
                avatar: data.userId === user.uid ? (user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.displayName}`) : (users.find(u => u.id === data.userId)?.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=friend`),
                level: 1
             },
@@ -252,7 +253,7 @@ export default function Community() {
       await setDoc(ref, {
         userId: targetUserId,
         fromUserId: user.uid,
-        fromUserName: user.displayName || "Athlete",
+        fromUserName: user.displayName === "Athlete" ? (user.email?.split("@")[0] || "User") : (user.displayName || "User"),
         fromUserAvatar: user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.displayName}`,
         type,
         targetId,
@@ -278,10 +279,10 @@ export default function Community() {
     // Map to users state data
     return Object.entries(userStatsMap)
         .map(([uid, distance]) => {
-            const userProfile = users.find(u => u.id === uid) || { displayName: "Athlete", photoURL: "" };
+            const userProfile = users.find(u => u.id === uid) || { displayName: "User", photoURL: "" };
             return { 
                 uid,
-                name: userProfile.displayName || "Athlete", 
+                name: userProfile.displayName === "Athlete" ? "User" : (userProfile.displayName || "User"), 
                 avatar: userProfile.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userProfile.displayName}`, 
                 distance 
             };
@@ -346,7 +347,7 @@ export default function Community() {
       const c = {
         parentId: postId,
         userId: user.uid,
-        userName: user.displayName || "Athlete",
+        userName: user.displayName === "Athlete" ? (user.email?.split("@")[0] || "User") : (user.displayName || "User"),
         userAvatar: user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.displayName}`,
         text: newComment,
         createdAt: serverTimestamp()
@@ -582,7 +583,7 @@ export default function Community() {
       const ref = doc(collection(db, "posts"));
       await setDoc(ref, {
         userId: user.uid,
-        userName: user.displayName || "Athlete",
+        userName: user.displayName === "Athlete" ? (user.email?.split("@")[0] || "User") : (user.displayName || "User"),
         userAvatar: user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.displayName}`,
         content: newPost,
         likes: 0,
@@ -593,7 +594,7 @@ export default function Community() {
       const newPostLocal = {
         id: ref.id,
         type: 'text_post',
-        user: { name: user.displayName || "Athlete", avatar: user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.displayName}`, level: 1 },
+        user: { name: user.displayName === "Athlete" ? (user.email?.split("@")[0] || "User") : (user.displayName || "User"), avatar: user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.displayName}`, level: 1 },
         content: newPost,
         likes: 0,
         comments: 0,
@@ -635,7 +636,7 @@ export default function Community() {
       const ref = doc(collection(db, "messages"));
       const msg: any = {
         userId: user.uid,
-        userName: user.displayName || "Athlete",
+        userName: user.displayName === "Athlete" ? (user.email?.split("@")[0] || "User") : (user.displayName || "User"),
         userAvatar: user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.displayName}`,
         text: newMessage,
         createdAt: serverTimestamp()
@@ -1091,7 +1092,7 @@ export default function Community() {
                            <div className="flex items-center gap-3">
                               <img src={sender?.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${sender?.displayName}`} className="w-10 h-10 rounded-full" />
                               <div>
-                                 <p className="text-white font-bold">{sender?.displayName || "Athlete"}</p>
+                                 <p className="text-white font-bold">{sender?.displayName === "Athlete" ? "User" : (sender?.displayName || "User")}</p>
                                  <p className="text-xs text-gray-500">Sent a friend request</p>
                               </div>
                            </div>
@@ -1194,34 +1195,8 @@ export default function Community() {
                  </div>
              ))}
           </div>                
-        )}                
-
-        {activeTab === "Routes" && (
-          <div className="space-y-4 pb-6">                
-             <div className="flex justify-between items-center mb-4">
-               <h3 className="text-white font-display font-bold text-xl">Community Favorite Routes</h3>
-               <button onClick={() => setIsRouteCreatorOpen(true)} className="bg-[#222] text-brand-500 hover:bg-[#333] transition-colors p-2 rounded-xl flex items-center gap-2">
-                 <PlusCircle className="w-5 h-5"/>
-                 <span className="text-sm font-bold pr-2">Create Route</span>
-               </button>
-             </div>
-             {routes.map(route => (
-                <div key={route.id} className="bg-[#111] border border-[#222] rounded-3xl p-5 flex items-center gap-4">
-                   <div className="w-16 h-16 rounded-2xl bg-[#222] flex items-center justify-center">
-                     <Trophy className="w-8 h-8 text-brand-500" />
-                   </div>                
-                   <div className="flex-1">
-                     <p className="text-white font-semibold">{route.activityType === 'run' ? 'Running' : 'Cycling'} Route</p>
-                     <p className="text-gray-500 text-sm">{route.distance.toFixed(1)} km • {route.likes} Likes</p>
-                   </div>
-                   <button onClick={() => navigate(`/activity?ghostId=${route.id}`)} className="bg-white text-black px-4 py-2 rounded-xl text-sm font-bold">Race</button>
-                </div>
-             ))}
-          </div>                
         )}
       </div>
-
-      <RouteCreatorModal isOpen={isRouteCreatorOpen} onClose={() => setIsRouteCreatorOpen(false)} />
     </div>
   );
 }

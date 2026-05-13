@@ -23,7 +23,7 @@ service cloud.firestore {
     
     function isValidActivityCreate(data) {
        return data.keys().hasAll(['userId', 'distance', 'timeSeconds', 'createdAt']) &&
-              data.keys().size() >= 4 && data.keys().size() <= 8 &&
+              data.keys().size() >= 4 && data.keys().size() <= 13 &&
               data.distance is number &&
               data.timeSeconds is number &&
               data.userId == request.auth.uid &&
@@ -31,7 +31,13 @@ service cloud.firestore {
               (!data.keys().hasAny(['activityType']) || (data.activityType is string && data.activityType.size() <= 20)) &&
               (!data.keys().hasAny(['pace']) || data.pace is number) &&
               (!data.keys().hasAny(['status']) || (data.status is string && data.status.size() <= 20)) &&
-              (!data.keys().hasAny(['updatedAt']) || data.updatedAt == request.time);
+              (!data.keys().hasAny(['updatedAt']) || data.updatedAt == request.time) &&
+              (!data.keys().hasAny(['route']) || data.route is list) &&
+              (!data.keys().hasAny(['path']) || data.path is list) &&
+              (!data.keys().hasAny(['likes']) || data.likes is number) &&
+              (!data.keys().hasAny(['isRoute']) || data.isRoute is bool) &&
+              (!data.keys().hasAny(['routeName']) || (data.routeName is string && data.routeName.size() <= 100)) &&
+              (!data.keys().hasAny(['routeId']) || (data.routeId is string && data.routeId.size() <= 128));
     }
 
     function isValidPostCreate(data) {
@@ -59,15 +65,17 @@ service cloud.firestore {
     }
 
     function isValidMessageCreate(data) {
-       return data.keys().hasAll(['userId', 'text', 'createdAt']) &&
-              data.keys().size() >= 3 && data.keys().size() <= 7 &&
-              data.userId == request.auth.uid &&
+       return data.keys().hasAll(['text', 'createdAt']) &&
+              data.keys().size() >= 2 && data.keys().size() <= 10 &&
               data.text is string && data.text.size() > 0 && data.text.size() <= 1000 &&
               data.createdAt == request.time &&
+              (!data.keys().hasAny(['userId']) || data.userId == request.auth.uid) &&
               (!data.keys().hasAny(['userName']) || (data.userName is string && data.userName.size() <= 100)) &&
               (!data.keys().hasAny(['userAvatar']) || (data.userAvatar is string && data.userAvatar.size() <= 1000)) &&
-              (!data.keys().hasAny(['from']) || (data.from is string && data.from.size() <= 128)) &&
-              (!data.keys().hasAny(['to']) || (data.to is string && data.to.size() <= 128));
+              (!data.keys().hasAny(['from']) || (data.from is string && data.from.size() <= 128 && data.from == request.auth.uid)) &&
+              (!data.keys().hasAny(['to']) || (data.to is string && data.to.size() <= 128)) &&
+              (!data.keys().hasAny(['participants']) || (data.participants is list && data.participants.size() == 2 && data.participants.hasAll([request.auth.uid]))) &&
+              (!data.keys().hasAny(['read']) || data.read is bool);
     }
 
     function isValidCommentCreate(data) {
@@ -110,6 +118,14 @@ service cloud.firestore {
               data.userIds is list && data.userIds.size() == 2 &&
               data.userIds.hasAll([request.auth.uid]) &&
               data.createdAt == request.time;
+    }
+
+    function isValidChallengeParticipantCreate(data) {
+       return data.keys().hasAll(['userId', 'challengeId', 'joinedAt']) &&
+              data.keys().size() == 3 &&
+              data.userId == request.auth.uid &&
+              data.challengeId is string && data.challengeId.size() > 0 && data.challengeId.size() <= 128 &&
+              data.joinedAt == request.time;
     }
 
     match /users/{userId} {
@@ -159,18 +175,31 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isValidId(challengeId) && existing().creatorId == request.auth.uid;
     }
 
+    match /challengeParticipants/{participantId} {
+      allow get: if isSignedIn() && isValidId(participantId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(participantId) && isValidChallengeParticipantCreate(incoming());
+      allow delete: if isSignedIn() && isValidId(participantId) && existing().userId == request.auth.uid;
+    }
+
     match /messages/{messageId} {
       allow get: if isSignedIn() && isValidId(messageId) && (
         !existing().keys().hasAny(['to']) || 
         existing().to == request.auth.uid || 
-        existing().from == request.auth.uid
+        existing().from == request.auth.uid ||
+        (existing().keys().hasAny(['participants']) && existing().participants.hasAll([request.auth.uid]))
       );
       allow list: if isSignedIn() && (
         !resource.data.keys().hasAny(['to']) || 
         resource.data.to == request.auth.uid || 
-        resource.data.from == request.auth.uid
+        resource.data.from == request.auth.uid ||
+        (resource.data.keys().hasAny(['participants']) && resource.data.participants.hasAll([request.auth.uid]))
       );
       allow create: if isSignedIn() && isValidId(messageId) && isValidMessageCreate(incoming());
+      allow update: if isSignedIn() && isValidId(messageId) && 
+                    existing().to == request.auth.uid && 
+                    incoming().diff(existing()).affectedKeys().hasOnly(['read']) &&
+                    incoming().read == true;
     }
 
     match /comments/{commentId} {

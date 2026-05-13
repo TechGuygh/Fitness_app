@@ -23,7 +23,7 @@ export default function AppLayout() {
     return <Outlet />;
   }
 
-  const firstName = user.displayName?.split(" ")[0] || "Athlete";
+  const firstName = user.displayName === "Athlete" ? (user.email?.split("@")[0] || "User") : (user.displayName?.split(" ")[0] || user.email?.split("@")[0] || "User");
   const avatarUrl = user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${firstName}`;
 
   return (

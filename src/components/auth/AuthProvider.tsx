@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const userSnap = await getDoc(userRef);
           if (!userSnap.exists()) {
             await setDoc(userRef, {
-              displayName: currentUser.displayName || 'Athlete',
+              displayName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Athlete',
               photoURL: currentUser.photoURL || '',
               joinedAt: serverTimestamp(),
               level: 1,
@@ -53,6 +53,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               activeHours: 0,
               calories: 0,
             });
+          } else {
+            // Fix existing users who got 'Athlete' saved in DB due to race condition during sign up
+            const userData = userSnap.data();
+            const realName = currentUser.displayName || currentUser.email?.split('@')[0];
+            if (userData.displayName === 'Athlete' && realName && realName !== 'Athlete') {
+              await setDoc(userRef, { displayName: realName }, { merge: true });
+            }
           }
         } catch (error) {
           console.error("Error creating user profile in Firestore", error);
@@ -89,9 +96,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUpWithEmail = async (email: string, password: string) => {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const newDisplayName = email.split('@')[0];
       await updateProfile(userCredential.user, {
-        displayName: email.split('@')[0],
+        displayName: newDisplayName,
       });
+      // Update the user document since onAuthStateChanged might have saved 'Athlete' before updateProfile completed
+      const userRef = doc(db, 'users', userCredential.user.uid);
+      await setDoc(userRef, { displayName: newDisplayName }, { merge: true });
     } catch (error) {
       console.error("Email SignUp error", error);
       throw error;

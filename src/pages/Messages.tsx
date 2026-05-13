@@ -185,7 +185,7 @@ export default function Messages() {
                 </div>
                 <div className="flex-1 text-left min-w-0">
                   <div className="flex justify-between items-start mb-0.5">
-                    <p className="font-bold text-white truncate">{u.displayName}</p>
+                    <p className="font-bold text-white truncate">{u.displayName === "Athlete" ? "User" : u.displayName}</p>
                     <span className="text-[10px] text-gray-500">
                       {allLatestMessages[u.id]?.createdAt?.toDate ? formatDistanceToNow(allLatestMessages[u.id].createdAt.toDate(), { addSuffix: false }) : ""}
                     </span>
@@ -226,7 +226,7 @@ export default function Messages() {
                   className="w-10 h-10 rounded-full border border-[#222]" 
                 />
                 <div>
-                  <h3 className="font-bold text-white">{selectedUser?.displayName}</h3>
+                  <h3 className="font-bold text-white">{selectedUser?.displayName === "Athlete" ? "User" : selectedUser?.displayName}</h3>
                   <p className="text-[10px] text-brand-500 font-bold uppercase tracking-widest">Online</p>
                 </div>
               </div>

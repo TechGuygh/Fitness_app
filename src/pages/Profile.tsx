@@ -9,6 +9,7 @@ import { format } from "date-fns";
 import { uploadBytes, getDownloadURL, ref } from "firebase/storage";
 import { updateProfile } from "firebase/auth";
 import { formatDistance } from "@/src/lib/utils";
+import { useNavigate } from "react-router-dom";
 
 const BADGES = [
   { id: 1, name: "Early Bird", desc: "5 runs before 6 AM", icon: "🌅", unlocked: true },
@@ -19,6 +20,7 @@ const BADGES = [
 
 export default function Profile() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [profileData, setProfileData] = useState<any>(null);
   const [weeklyGoal, setWeeklyGoal] = useState<any>(null);
   const [friends, setFriends] = useState<any[]>([]);
@@ -139,7 +141,7 @@ export default function Profile() {
   if (!user) return null;
 
   const joinDate = profileData?.joinedAt?.toDate ? format(profileData.joinedAt.toDate(), "MMM yyyy") : "recently";
-  const firstName = user.displayName?.split(" ")[0] || "Athlete";
+  const firstName = user.displayName === "Athlete" ? (user.email?.split("@")[0] || "User") : (user.displayName?.split(" ")[0] || user.email?.split("@")[0] || "User");
   const avatarUrl = user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${firstName}`;
   const level = profileData?.level || 1;
 
@@ -183,7 +185,7 @@ export default function Profile() {
             </div>
           ) : (
              <h2 className="text-3xl font-display font-bold text-white mb-1 cursor-pointer flex items-center gap-2" onClick={() => setIsEditingName(true)}>
-               {user.displayName || 'Athlete'}
+               {user.displayName === "Athlete" ? (user.email?.split("@")[0] || "User") : (user.displayName || 'User')}
                <span className="text-xs text-gray-500 font-normal underline">Edit</span>
              </h2>
           )}
@@ -216,9 +218,17 @@ export default function Profile() {
       <div>
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-display font-semibold text-xl text-white">Your Friends</h3>
-          <span className="text-xs font-bold text-gray-500 bg-[#111] border border-[#222] px-3 py-1 rounded-full uppercase tracking-wider">
-            {friends.length} Connections
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold text-gray-500 bg-[#111] border border-[#222] px-3 py-1 rounded-full uppercase tracking-wider">
+              {friends.length} Connections
+            </span>
+             <button 
+                onClick={() => navigate('/community', { state: { activeTab: 'Friends' } })}
+                className="text-xs font-bold text-brand-500 bg-[#222] hover:bg-[#333] transition-colors px-3 py-1 rounded-full uppercase tracking-wider"
+             >
+                View All
+             </button>
+          </div>
         </div>
         <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-4 px-4">
            {friends.length === 0 ? (
