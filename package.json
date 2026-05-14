@@ -25,7 +25,6 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-leaflet": "^4.2.1",
-    "react-leaflet-geosearch": "^0.3.4",
     "react-router-dom": "^6.28.0",
     "recharts": "^2.15.4",
     "tailwind-merge": "^2.5.5",

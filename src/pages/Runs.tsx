@@ -5,11 +5,41 @@ import { db } from "@/src/lib/firebase";
 import { useAuth } from "@/src/components/auth/AuthProvider";
 import { useNavigate } from "react-router-dom";
 import { Play, Plus, Search, Calendar, MapPin, Navigation } from "lucide-react";
-import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
-import { GeoSearchControl, OpenStreetMapProvider } from "react-leaflet-geosearch";
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
+import { GeoSearchControl, OpenStreetMapProvider } from "leaflet-geosearch";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-geosearch/dist/geosearch.css";
+
+function SearchField({ provider, onResult }: { provider: any, onResult: (res: any) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    const searchControl = new (GeoSearchControl as any)({
+      provider,
+      showMarker: false,
+      showPopup: false,
+      autoClose: true,
+      retainZoomLevel: false,
+      animateZoom: true,
+      keepResult: false,
+      searchLabel: 'Enter address'
+    });
+    
+    map.addControl(searchControl);
+    
+    const handleResult = (e: any) => {
+        onResult(e);
+    };
+    
+    map.on('geosearch/showlocation', handleResult);
+    
+    return () => {
+        map.removeControl(searchControl);
+        map.off('geosearch/showlocation', handleResult);
+    };
+  }, [map, provider, onResult]);
+  return null;
+}
 
 function LocationPicker({ position, setPosition }: { position: [number, number] | null, setPosition: (pos: [number, number]) => void }) {
   useMapEvents({
@@ -95,11 +125,8 @@ export default function Runs() {
                 <MapContainer center={[5.6037, -0.1870]} zoom={13} className="h-full w-full">
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                     <LocationPicker position={formData.location} setPosition={(pos) => setFormData({...formData, location: pos})} />
-                    <GeoSearchControl
+                    <SearchField
                         provider={provider}
-                        showMarker={false}
-                        showPopup={false}
-                        autoClose={true}
                         onResult={(result: any) => setFormData({...formData, location: [result.location.y, result.location.x]})}
                     />
                 </MapContainer>
