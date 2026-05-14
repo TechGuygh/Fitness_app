@@ -155,7 +155,6 @@ export default function Activity() {
   const finishIcon = React.useMemo(() => createCustomIcon("#ef4444", "F"), []);
   const currentIcon = React.useMemo(() => createCustomIcon("#f97316"), []);
   const ghostIcon = React.useMemo(() => createCustomIcon("#a855f7"), []);
-  const liveUserIcon = React.useMemo(() => createCustomIcon("#3b82f6"), []);
   const {
     workoutState,
     activityType,

@@ -202,7 +202,7 @@ export default function Community() {
                avatar: data.userId === user.uid ? (user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.displayName}`) : (users.find(u => u.id === data.userId)?.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=friend`),
                level: 1
             },
-            activity: data.activityType === 'run' ? 'Morning Run' : 'Cycling Session',
+            activity: data.activityType === 'run' ? 'Morning Run' : data.activityType === 'walk' ? 'Morning Walk' : data.activityType === 'hike' ? 'Morning Hike' : 'Cycling Session',
             distance: `${data.distance.toFixed(2)} km`,
             pace: pace > 0 ? `${paceM}'${paceS}"/km` : "0'00\"/km",
             time: `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`,

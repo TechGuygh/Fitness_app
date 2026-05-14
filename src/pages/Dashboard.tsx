@@ -241,7 +241,7 @@ export default function Dashboard() {
 
     return {
       id: data.id,
-      type: data.activityType === 'run' ? 'Running' : 'Cycling',
+      type: data.activityType === 'run' ? 'Running' : data.activityType === 'walk' ? 'Walking' : data.activityType === 'hike' ? 'Hiking' : 'Cycling',
       distance: formatDistance(data.distance || 0),
       time: `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`,
       pace: pace > 0 ? `${paceM}'${paceS}"` : "0'00\"",
