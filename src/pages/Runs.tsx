@@ -50,6 +50,22 @@ function LocationPicker({ position, setPosition }: { position: [number, number] 
   return position === null ? null : <Marker position={position} />;
 }
 
+function deg2rad(deg: number) {
+  return deg * (Math.PI / 180);
+}
+
+function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371;
+  const dLat = deg2rad(lat2 - lat1);
+  const dLon = deg2rad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 export default function Runs() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -63,11 +79,25 @@ export default function Runs() {
         shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
     });
   }, []);
-  const [runs, setRuns] = useState<any[]>([]);
-  const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({
-    title: "", date: "", time: "", distanceGoal: "", estimatedPace: "", maxParticipants: "", type: "casual", visibility: "public", location: null as [number, number] | null
-  });
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLocation([position.coords.latitude, position.coords.longitude]);
+        },
+        (error) => console.error("Error getting location", error)
+      );
+    }
+  }, []);
+
+  // Filter runs based on proximity (e.g., within 50km)
+  const nearbyRuns = userLocation ? runs.filter(run => {
+    if (!run.location) return false;
+    const d = getDistance(userLocation[0], userLocation[1], run.location[0], run.location[1]);
+    return d < 50; // Within 50km
+  }) : [];
 
   useEffect(() => {
     const q = query(collection(db, "runs"));
@@ -102,6 +132,19 @@ export default function Runs() {
   return (
     <div className="p-4 text-white">
       <h1 className="text-2xl font-bold mb-4">Scheduled Runs</h1>
+      {nearbyRuns.length > 0 && (
+         <div className="mb-6">
+            <h2 className="text-lg font-bold mb-2">Runs Nearby</h2>
+            <div className="space-y-4">
+                {nearbyRuns.map(run => (
+                   <div key={run.id} className="p-4 bg-[#111] rounded-xl border border-brand-500 cursor-pointer" onClick={() => navigate(`/runs/${run.id}`)}>
+                      <p className="text-brand-500 text-xs font-bold uppercase tracking-wider mb-1">Nearby</p>
+                      <h2 className="text-lg font-bold">{run.title}</h2>
+                   </div>
+                ))}
+            </div>
+         </div>
+      )}
       <button onClick={() => setShowForm(!showForm)} className="mb-4 bg-brand-500 text-black px-4 py-2 rounded-xl text-sm font-bold">
         {showForm ? "Cancel" : "Create New Run"}
       </button>
