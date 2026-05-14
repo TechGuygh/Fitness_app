@@ -41,6 +41,29 @@ const createCustomIcon = (color: string, text?: string) => {
   });
 };
 
+const createAvatarIcon = (url?: string, seed?: string) => {
+  if (typeof L === 'undefined' || !L.divIcon) return null as any;
+  const imageUrl = url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${seed || Math.random()}`;
+  return L.divIcon({
+    className: "custom-avatar-marker",
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
+    html: `
+      <div style="
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        border: 3px solid #3b82f6;
+        box-shadow: 0 0 10px rgba(59,130,246,0.5);
+        background-color: #111;
+        background-image: url('${imageUrl}');
+        background-size: cover;
+        background-position: center;
+      "></div>
+    `
+  });
+};
+
 function deg2rad(deg: number) {
   return deg * (Math.PI/180);
 }
@@ -375,7 +398,7 @@ export default function Activity() {
                 <InteractiveMarker 
                    key={liveUser.id} 
                    position={liveUser.position as [number, number]} 
-                   icon={liveUserIcon} 
+                   icon={createAvatarIcon(liveUser.photoURL, liveUser.userName)} 
                    label={`${liveUser.userName || 'Athlete'} (${formatDistance(liveUser.distance || 0)})`} 
                    setIsAutoCenter={() => {}} 
                 />

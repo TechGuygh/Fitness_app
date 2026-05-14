@@ -131,11 +131,15 @@ service cloud.firestore {
 
     function isValidLiveTrackingCreate(data) {
        return data.keys().hasAll(['userId', 'routeId', 'position', 'updatedAt']) &&
-              data.keys().size() >= 4 && data.keys().size() <= 6 &&
+              data.keys().size() >= 4 && data.keys().size() <= 10 &&
               data.userId == request.auth.uid &&
               data.routeId is string &&
               data.position is list && data.position.size() == 2 &&
-              data.updatedAt == request.time;
+              data.updatedAt == request.time &&
+              (!data.keys().hasAny(['userName']) || (data.userName is string && data.userName.size() <= 100)) &&
+              (!data.keys().hasAny(['photoURL']) || (data.photoURL is string && data.photoURL.size() <= 1000)) &&
+              (!data.keys().hasAny(['distance']) || data.distance is number) &&
+              (!data.keys().hasAny(['time']) || data.time is number);
     }
 
     match /liveTracking/{userId} {
@@ -143,7 +147,7 @@ service cloud.firestore {
       allow list: if isSignedIn();
       allow create: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidLiveTrackingCreate(incoming());
       allow update: if isSignedIn() && request.auth.uid == userId && isValidId(userId) &&
-                    incoming().diff(existing()).affectedKeys().hasOnly(['position', 'updatedAt']);
+                    incoming().diff(existing()).affectedKeys().hasOnly(['position', 'updatedAt', 'distance', 'time', 'userName', 'photoURL', 'routeId']);
       allow delete: if isSignedIn() && request.auth.uid == userId;
     }
 
