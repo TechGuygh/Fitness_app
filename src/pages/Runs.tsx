@@ -69,6 +69,9 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
 export default function Runs() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [showForm, setShowForm] = useState(false);
+  const [runs, setRuns] = useState<any[]>([]);
+  const [formData, setFormData] = useState<any>({ title: "", date: "", time: "", distanceGoal: "", estimatedPace: "", maxParticipants: "", type: "casual", visibility: "public", location: null });
 
   useEffect(() => {
     // Fix Leaflet marker icons safely inside useEffect
