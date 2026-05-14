@@ -64,8 +64,8 @@ export default function ActivitySettingsModal({
                 <input 
                   type="number" 
                   step="0.1"
-                  value={localPace} 
-                  onChange={(e) => setLocalPace(parseFloat(e.target.value))}
+                  value={Number.isNaN(localPace) ? '' : localPace} 
+                  onChange={(e) => setLocalPace(e.target.value ? parseFloat(e.target.value) : NaN)}
                   className="w-full p-4 bg-[#222] rounded-xl text-white outline-none border border-transparent focus:border-brand-500 transition-colors"
                 />
               </div>
@@ -75,8 +75,8 @@ export default function ActivitySettingsModal({
                 <input 
                   type="number" 
                   step="0.1"
-                  value={localDist} 
-                  onChange={(e) => setLocalDist(parseFloat(e.target.value))}
+                  value={Number.isNaN(localDist) ? '' : localDist} 
+                  onChange={(e) => setLocalDist(e.target.value ? parseFloat(e.target.value) : NaN)}
                   className="w-full p-4 bg-[#222] rounded-xl text-white outline-none border border-transparent focus:border-brand-500 transition-colors"
                 />
               </div>

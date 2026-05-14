@@ -1,7 +1,7 @@
 import { format, subDays, startOfDay, isAfter } from "date-fns";
 import { Play, TrendingUp, Flame, MapPin, ChevronRight, Activity as ActivityIcon, PlusCircle } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-import { AreaChart, Area, ResponsiveContainer, XAxis, Tooltip } from "recharts";
+import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip, BarChart, Bar, LineChart, Line, CartesianGrid } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/src/components/auth/AuthProvider";
 import { useState, useEffect, useMemo } from "react";
@@ -30,6 +30,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
   const [savingGoal, setSavingGoal] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [weeklyGoal, setWeeklyGoal] = useState<WeeklyGoal>({ type: 'distance', target: 30 });
 
   useEffect(() => {
@@ -182,12 +183,62 @@ export default function Dashboard() {
     };
   }, [activities, weeklyGoal]);
 
-  const formattedActivities = activities.slice(0, 3).map(data => {
+  const pbs = useMemo(() => {
+    let longestDistance = { distance: 0, id: "" };
+    let fastest1K = { time: Infinity, id: "" };
+    let fastest5K = { time: Infinity, id: "" };
+    let fastest10K = { time: Infinity, id: "" };
+
+    activities.forEach(a => {
+      if (a.distance && a.distance > longestDistance.distance) {
+        longestDistance = { distance: a.distance, id: a.id };
+      }
+      if (a.splits && a.splits.length >= 1) {
+         for (let i = 0; i < a.splits.length; i++) {
+            if (!a.splits[i].isPartial && a.splits[i].timeSeconds > 0 && a.splits[i].timeSeconds < fastest1K.time) {
+                fastest1K = { time: a.splits[i].timeSeconds, id: a.id };
+            }
+         }
+      }
+      if (a.splits && a.splits.length >= 5) {
+         let best5K = Infinity;
+         for (let i = 0; i <= a.splits.length - 5; i++) {
+            const sum = a.splits.slice(i, i+5).reduce((acc: number, s: any) => acc + (s.isPartial ? Infinity : s.timeSeconds), 0);
+            if (sum < best5K) best5K = sum;
+         }
+         if (best5K < fastest5K.time) fastest5K = { time: best5K, id: a.id };
+      }
+      if (a.splits && a.splits.length >= 10) {
+         let best10K = Infinity;
+         for (let i = 0; i <= a.splits.length - 10; i++) {
+            const sum = a.splits.slice(i, i+10).reduce((acc: number, s: any) => acc + (s.isPartial ? Infinity : s.timeSeconds), 0);
+            if (sum < best10K) best10K = sum;
+         }
+         if (best10K < fastest10K.time) fastest10K = { time: best10K, id: a.id };
+      }
+    });
+
+    return {
+       longestDistance: longestDistance.id ? longestDistance : null,
+       fastest1K: fastest1K.id ? fastest1K : null,
+       fastest5K: fastest5K.id ? fastest5K : null,
+       fastest10K: fastest10K.id ? fastest10K : null,
+    };
+  }, [activities]);
+
+  const formattedActivities = activities.slice(0, 5).map(data => {
     const m = Math.floor(data.timeSeconds / 60);
-    const s = data.timeSeconds % 60;
-    const pace = data.pace;
+    const s = Math.floor(data.timeSeconds % 60);
+    const pace = data.pace || 0;
     const paceM = Math.floor(pace);
     const paceS = Math.floor((pace % 1) * 60).toString().padStart(2, '0');
+    
+    const pbList: string[] = [];
+    if (pbs.longestDistance?.id === data.id) pbList.push("Longest Distance \uD83C\uDFC6");
+    if (pbs.fastest1K?.id === data.id) pbList.push("1K PB \uD83D\uDD25");
+    if (pbs.fastest5K?.id === data.id) pbList.push("5K PB \uD83D\uDD25");
+    if (pbs.fastest10K?.id === data.id) pbList.push("10K PB \uD83D\uDD25");
+
     return {
       id: data.id,
       type: data.activityType === 'run' ? 'Running' : 'Cycling',
@@ -195,7 +246,9 @@ export default function Dashboard() {
       time: `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`,
       pace: pace > 0 ? `${paceM}'${paceS}"` : "0'00\"",
       date: format(data.createdAt, "MMM d, yyyy"),
-      mapUrl: "https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&q=80&w=800&h=400",
+      mapUrl: "https://images.unsplash.com/photo-1472214103451-9374bd1c798e?auto=format&fit=crop&q=80&w=800&h=400",
+      pbList,
+      raw: data
     };
   });
 
@@ -443,30 +496,84 @@ export default function Dashboard() {
                 initial={{ opacity: 0, x: -20 }} 
                 animate={{ opacity: 1, x: 0 }} 
                 transition={{ delay: 0.4 + (i * 0.1) }}
-                className="bg-[#111] border border-[#222] rounded-2xl p-4 flex gap-4 hover:bg-[#161616] transition-colors cursor-pointer"
+                onClick={() => setExpandedId(expandedId === activity.id ? null : activity.id)}
+                className="bg-[#111] border border-[#222] rounded-2xl p-4 flex flex-col hover:bg-[#161616] transition-colors cursor-pointer block"
               >
-              <div className="w-20 h-20 rounded-xl overflow-hidden shrink-0 relative">
-                <img src={activity.mapUrl} alt="Map" className="w-full h-full object-cover saturate-50 contrast-125" />
-                <div className="absolute inset-0 bg-brand-500/20 mix-blend-overlay"></div>
-              </div>
-              <div className="flex-1 flex flex-col justify-center">
-                <div className="flex items-start justify-between mb-1">
-                  <h4 className="font-display font-semibold text-white">{activity.type}</h4>
-                  <span className="text-xs font-medium text-gray-500">{activity.date}</span>
+               <div className="flex gap-4">
+                <div className="w-20 h-20 rounded-xl overflow-hidden shrink-0 relative">
+                  <img src={activity.mapUrl} alt="Map" className="w-full h-full object-cover saturate-50 contrast-125" />
+                  <div className="absolute inset-0 bg-brand-500/20 mix-blend-overlay"></div>
                 </div>
-                <div className="flex items-center gap-4 text-sm text-gray-400 font-medium">
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-white font-semibold">{activity.distance}</span>
+                <div className="flex-1 flex flex-col justify-center">
+                  <div className="flex items-start justify-between mb-1">
+                    <h4 className="font-display font-semibold text-white">{activity.type}</h4>
+                    <span className="text-xs font-medium text-gray-500">{activity.date}</span>
                   </div>
-                  <div className="flex items-baseline gap-1">
-                    <span>{activity.time}</span>
+                  <div className="flex items-center gap-4 text-sm text-gray-400 font-medium">
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-white font-semibold">{activity.distance}</span>
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                      <span>{activity.time}</span>
+                    </div>
+                    <div className="flex items-baseline gap-1">
+                      <span>{activity.pace}</span>
+                    </div>
                   </div>
-                  <div className="flex items-baseline gap-1">
-                    <span>{activity.pace}</span>
-                  </div>
+                  {activity.pbList && activity.pbList.length > 0 && (
+                      <div className="flex gap-2 mt-2 flex-wrap">
+                          {activity.pbList.map(pb => (
+                              <span key={pb} className="text-[10px] font-bold bg-brand-500/10 text-brand-500 px-2 py-0.5 rounded-md border border-brand-500/20">{pb}</span>
+                          ))}
+                      </div>
+                  )}
                 </div>
-              </div>
-            </motion.div>
+               </div>
+
+               {expandedId === activity.id && activity.raw?.splits && activity.raw.splits.length > 0 && (
+                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mt-4 pt-4 border-t border-[#222] grid grid-cols-1 md:grid-cols-2 gap-6 overflow-hidden">
+                       <div>
+                           <h5 className="text-gray-300 text-xs font-bold mb-3 uppercase tracking-wider">Pace Splits (min/km)</h5>
+                           <div className="h-32 w-full">
+                              <ResponsiveContainer width="100%" height="100%">
+                                  <BarChart data={activity.raw.splits}>
+                                      <XAxis dataKey="split" axisLine={false} tickLine={false} tick={{ fill: '#666', fontSize: 10 }} />
+                                      <Tooltip 
+                                          contentStyle={{ backgroundColor: '#111', borderColor: '#333', borderRadius: '8px' }}
+                                          itemStyle={{ color: '#fff' }}
+                                          cursor={{ fill: '#ffffff10' }}
+                                      />
+                                      <Bar dataKey="pace" fill="var(--color-brand-500)" radius={[4, 4, 0, 0]} />
+                                  </BarChart>
+                              </ResponsiveContainer>
+                           </div>
+                       </div>
+                       {activity.raw.routeData && activity.raw.routeData.length > 0 && (
+                          <div>
+                             <h5 className="text-gray-300 text-xs font-bold mb-3 uppercase tracking-wider">Elevation (m)</h5>
+                             <div className="h-32 w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                   <AreaChart data={activity.raw.routeData}>
+                                       <defs>
+                                         <linearGradient id="colorAlt" x1="0" y1="0" x2="0" y2="1">
+                                           <stop offset="5%" stopColor="#4ade80" stopOpacity={0.3}/>
+                                           <stop offset="95%" stopColor="#4ade80" stopOpacity={0}/>
+                                         </linearGradient>
+                                       </defs>
+                                       <Tooltip 
+                                          contentStyle={{ backgroundColor: '#111', borderColor: '#333', borderRadius: '8px' }}
+                                          itemStyle={{ color: '#fff' }}
+                                          labelFormatter={() => ''}
+                                       />
+                                       <Area type="monotone" dataKey="altitude" stroke="#4ade80" fillOpacity={1} fill="url(#colorAlt)" />
+                                   </AreaChart>
+                                </ResponsiveContainer>
+                             </div>
+                          </div>
+                       )}
+                   </motion.div>
+               )}
+              </motion.div>
           ))}
         </div>
         )}
@@ -518,7 +625,15 @@ export default function Dashboard() {
                        </div>
                      )}
                    </div>
-                   <button onClick={() => navigate(`/activity?ghostId=${route.id}`)} className="bg-brand-500 text-black px-4 py-2 rounded-xl text-sm font-bold shadow-[0_5px_15px_rgba(204,255,0,0.15)] hover:bg-brand-400 shrink-0 transition-colors">Start</button>
+                   <div className="flex gap-2">
+                      <button onClick={() => {
+                        navigator.clipboard.writeText(`${window.location.origin}/activity?ghostId=${route.id}`);
+                        alert("Route link copied!");
+                       }} className="text-gray-400 hover:text-white p-2 border border-[#333] rounded-xl shrink-0">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-1.342A3 3 0 0015.367 3.316z" /></svg>
+                       </button>
+                      <button onClick={() => navigate(`/activity?ghostId=${route.id}`)} className="bg-brand-500 text-black px-4 py-2 rounded-xl text-sm font-bold shadow-[0_5px_15px_rgba(204,255,0,0.15)] hover:bg-brand-400 shrink-0 transition-colors">Start</button>
+                   </div>
                 </motion.div>
              ))}
            </div>

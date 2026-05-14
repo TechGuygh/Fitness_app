@@ -1,12 +1,15 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useLocation, Navigate } from "react-router-dom";
-import { Home, Activity, Users, User, MessageSquare } from "lucide-react";
+import { Home, Activity, Users, User, MessageSquare, Calendar } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { useAuth } from "@/src/components/auth/AuthProvider";
 import { motion } from "framer-motion";
+import { query, collection, where, onSnapshot } from "firebase/firestore";
+import { db } from "@/src/lib/firebase";
 
 const navItems = [
   { icon: Home, label: "Home", path: "/" },
+  { icon: Calendar, label: "Runs", path: "/runs" },
   { icon: Users, label: "Community", path: "/community" },
   { icon: MessageSquare, label: "Messages", path: "/messages" },
   { icon: User, label: "Profile", path: "/profile" },
@@ -15,6 +18,16 @@ const navItems = [
 export default function AppLayout() {
   const location = useLocation();
   const { user } = useAuth();
+  
+  const [notificationCount, setNotificationCount] = useState(0);
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, "notifications"), where("userId", "==", user.uid), where("read", "==", false));
+    const unsub = onSnapshot(q, (snapshot) => {
+      setNotificationCount(snapshot.size);
+    });
+    return unsub;
+  }, [user]);
   
   if (!user) {
     if (location.pathname !== '/') {
@@ -46,11 +59,16 @@ export default function AppLayout() {
                     "flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-300 font-bold text-sm",
                     isActive
                       ? "bg-brand-500 text-black shadow-[0_0_20px_rgba(204,255,0,0.2)]"
-                      : "text-gray-500 hover:text-white hover:bg-[#1a1a1a]"
+                      : "text-gray-500 hover:text-white hover:bg-[#111]"
                   )
                 }
               >
-                <item.icon className="w-5 h-5" />
+                <div className="relative">
+                    <item.icon className="w-5 h-5" />
+                    {item.label === "Community" && notificationCount > 0 && (
+                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-black"></span>
+                    )}
+                </div>
                 {item.label}
               </NavLink>
             ))}
@@ -97,7 +115,12 @@ export default function AppLayout() {
                     isActive ? "text-brand-500 scale-110" : "text-gray-500 hover:text-gray-300"
                   )}
                 >
-                  <item.icon className="w-6 h-6" strokeWidth={isActive ? 2.5 : 2} />
+                  <div className="relative">
+                    <item.icon className="w-6 h-6" strokeWidth={isActive ? 2.5 : 2} />
+                    {item.label === "Community" && notificationCount > 0 && (
+                        <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full border border-black"></span>
+                    )}
+                  </div>
                   <span className="text-[10px] font-bold uppercase tracking-widest">{item.label}</span>
                 </NavLink>
               );

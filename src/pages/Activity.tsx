@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Play, Pause, Square, MapPin, X, Signal, Settings } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from "react-leaflet";
+import { AreaChart, Area, ResponsiveContainer, XAxis, Tooltip, BarChart, Bar } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useAuth } from "@/src/components/auth/AuthProvider";
 import { db } from "@/src/lib/firebase";
-import { doc, setDoc, collection, serverTimestamp, getDoc } from "firebase/firestore";
+import { doc, setDoc, collection, serverTimestamp, getDoc, query, where, onSnapshot } from "firebase/firestore";
 import { handleFirestoreError, OperationType } from "@/src/lib/firebase-error";
 import { useSearchParams } from "react-router-dom";
 import { KalmanFilter } from "@/src/lib/KalmanFilter";
@@ -15,28 +16,30 @@ import ActivitySettingsModal from "@/src/components/ActivitySettingsModal";
 // ... (rest of the file as before until watchPosition logic) ...
 
 // Fix Leaflet marker icons with custom ones to avoid Vite import issues
-const createCustomIcon = (color: string) => {
+const createCustomIcon = (color: string, text?: string) => {
+  if (typeof L === 'undefined' || !L.divIcon) return null as any;
   return L.divIcon({
     className: "custom-marker",
     html: `
       <div style="
         background-color: ${color};
-        width: 20px;
-        height: 20px;
+        width: 24px;
+        height: 24px;
         border-radius: 50%;
         border: 3px solid white;
         box-shadow: 0 0 10px rgba(0,0,0,0.5);
-      "></div>
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: bold;
+        color: white;
+      ">${text || ''}</div>
     `,
-    iconSize: [20, 20],
-    iconAnchor: [10, 10],
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
   });
 };
-
-const startIcon = createCustomIcon("#22c55e");
-const finishIcon = createCustomIcon("#ef4444");
-const currentIcon = createCustomIcon("#f97316");
-const ghostIcon = createCustomIcon("#a855f7");
 
 function deg2rad(deg: number) {
   return deg * (Math.PI/180);
@@ -58,6 +61,14 @@ function formatTime(seconds: number) {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+function calculateDistance(path: [number, number][]) {
+  let dist = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    dist += getDistance(path[i][0], path[i][1], path[i+1][0], path[i+1][1]);
+  }
+  return dist;
 }
 
 // Component to recenter map during tracking/replay
@@ -113,16 +124,22 @@ const InteractiveMarker: React.FC<{
 import { useWorkout } from "@/src/components/WorkoutProvider";
 import { formatDistance } from "@/src/lib/utils";
 
-// ... (keep constants and helpers) ...
-
 export default function Activity() {
   const { user } = useAuth();
+  
+  // Create icons lazily
+  const startIcon = React.useMemo(() => createCustomIcon("#22c55e", "S"), []);
+  const finishIcon = React.useMemo(() => createCustomIcon("#ef4444", "F"), []);
+  const currentIcon = React.useMemo(() => createCustomIcon("#f97316"), []);
+  const ghostIcon = React.useMemo(() => createCustomIcon("#a855f7"), []);
+  const liveUserIcon = React.useMemo(() => createCustomIcon("#3b82f6"), []);
   const {
     workoutState,
     activityType,
     time,
     distance,
     routePath,
+    routeData,
     currentPosition,
     gpsSignal,
     autoPaused,
@@ -144,9 +161,25 @@ export default function Activity() {
   const [ghostPath, setGhostPath] = useState<[number, number][] | null>(null);
   const [ghostTotalTime, setGhostTotalTime] = useState(0);
   const ghostId = searchParams.get('ghostId');
+  const runId = searchParams.get('runId');
+  const activeId = ghostId || runId;
   
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [loadingSettings, setLoadingSettings] = useState(true);
+  const [liveUsers, setLiveUsers] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (activeId && user) {
+       const qLive = query(collection(db, "liveTracking"), where("routeId", "==", activeId));
+       const unsub = onSnapshot(qLive, (snap) => {
+           const others = snap.docs
+               .map(d => ({ id: d.id, ...d.data() }))
+               .filter(d => d.id !== user.uid); // exclude self
+           setLiveUsers(others);
+       });
+       return () => unsub();
+    }
+  }, [activeId, user]);
 
   useEffect(() => {
     if (user) {
@@ -175,7 +208,7 @@ export default function Activity() {
         paceThreshold: newPace,
         distanceThreshold: newDist,
         updatedAt: serverTimestamp()
-      });
+      }, { merge: true });
       setPaceThreshold(newPace);
       setDistanceThreshold(newDist);
       setIsSettingsOpen(false);
@@ -263,6 +296,37 @@ export default function Activity() {
   const currentPace = distance > 0 ? (time / 60) / distance : 0;
   const PaceFormatted = currentPace > 0 && currentPace < 60 ? `${Math.floor(currentPace)}'${Math.floor((currentPace % 1) * 60).toString().padStart(2, '0')}"` : "0'00\"";
 
+  const ghostDistance = ghostPath ? calculateDistance(ghostPath) : 0;
+  const ghostPace = ghostDistance > 0 ? (ghostTotalTime / 60) / ghostDistance : 0;
+  const GhostPaceFormatted = ghostPace > 0 && ghostPace < 60 ? `${Math.floor(ghostPace)}'${Math.floor((ghostPace % 1) * 60).toString().padStart(2, '0')}"` : "0'00\"";
+
+  const calculatedSplits = React.useMemo(() => {
+    if (!routeData || routeData.length === 0) return [];
+    const splitsList = [];
+    let nextSplitDist = 1;
+    let lastSplitTime = 0;
+    
+    for (const pt of routeData) {
+      if (pt.distance >= nextSplitDist) {
+        splitsList.push({
+          split: nextSplitDist,
+          pace: (pt.timeSeconds - lastSplitTime) / 60,
+        });
+        nextSplitDist++;
+        lastSplitTime = pt.timeSeconds;
+      }
+    }
+    if (distance > nextSplitDist - 1 + 0.05) {
+      const remDist = distance - (nextSplitDist - 1);
+      splitsList.push({
+        split: nextSplitDist,
+        pace: (time - lastSplitTime) / 60 / remDist,
+        isPartial: true,
+      });
+    }
+    return splitsList;
+  }, [routeData, distance, time]);
+
   return (
     <div className="relative h-[100dvh] w-full bg-black overflow-hidden flex flex-col md:flex-row">
       <AnimatePresence>
@@ -306,6 +370,17 @@ export default function Activity() {
           {ghostPosition && workoutState === 'tracking' && (
             <InteractiveMarker position={ghostPosition} icon={ghostIcon} label="Ghost Position" setIsAutoCenter={setIsAutoCenter} />
           )}
+          {liveUsers.map((liveUser) => (
+             liveUser.position ? (
+                <InteractiveMarker 
+                   key={liveUser.id} 
+                   position={liveUser.position as [number, number]} 
+                   icon={liveUserIcon} 
+                   label={`${liveUser.userName || 'Athlete'} (${formatDistance(liveUser.distance || 0)})`} 
+                   setIsAutoCenter={() => {}} 
+                />
+             ) : null
+          ))}
         </MapContainer>
 
         {!isAutoCenter && currentPosition && workoutState !== 'finished' && workoutState !== 'idle' && (
@@ -340,6 +415,30 @@ export default function Activity() {
         <div className="absolute top-0 inset-x-0 h-32 bg-gradient-to-b from-black/80 to-transparent z-10 pointer-events-none md:hidden" />
 
         <AnimatePresence>
+          {liveUsers.length > 0 && (workoutState === 'tracking' || workoutState === 'paused') && (
+            <motion.div 
+              initial={{ x: -100, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -100, opacity: 0 }}
+              className="absolute top-36 md:top-32 left-4 z-[400] flex flex-col gap-2 max-w-[150px]"
+            >
+              <div className="bg-black/80 backdrop-blur-md border border-[#333] rounded-2xl p-3 shadow-2xl overflow-hidden">
+                <p className="text-[10px] text-brand-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 bg-brand-500 rounded-full animate-pulse" />
+                  Live Participants
+                </p>
+                <div className="space-y-2">
+                  {liveUsers.map(u => (
+                    <div key={u.id} className="flex flex-col gap-0.5 border-l-2 border-[#444] pl-2">
+                      <span className="text-white text-[11px] font-bold truncate">{u.userName}</span>
+                      <span className="text-gray-400 text-[9px]">{formatDistance(u.distance || 0)} • {formatTime(u.time || 0)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
           {(workoutState === 'tracking' || workoutState === 'paused') && (
             <motion.div 
               initial={{ y: -100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -100, opacity: 0 }}
@@ -365,8 +464,8 @@ export default function Activity() {
                 </div>
                 <div className="w-px h-8 bg-[#333]"></div>
                 <div className="text-center">
-                  <p className="text-gray-400 font-medium tracking-widest uppercase text-[10px] mb-0.5">Pace</p>
-                  <span className="font-display font-bold text-2xl text-white">{PaceFormatted}</span>
+                  <p className="text-gray-400 font-medium tracking-widest uppercase text-[10px] mb-0.5">{ghostId ? "Ghost Pace" : "Pace"}</p>
+                  <span className="font-display font-bold text-2xl text-white">{ghostId ? GhostPaceFormatted : PaceFormatted}</span>
                 </div>
               </div>
             </motion.div>
@@ -382,19 +481,19 @@ export default function Activity() {
         />
       </div>
 
-      <div className="absolute bottom-20 md:bottom-0 inset-x-0 md:relative md:w-[400px] md:h-full z-20 flex flex-col justify-end md:justify-start">
-        <div className="bg-black/80 md:bg-[#0a0a0a] backdrop-blur-2xl md:h-full border-t md:border-t-0 md:border-l border-[#222] p-6 md:p-8 rounded-t-[40px] md:rounded-none flex flex-col transition-all duration-500">
-          <div className="w-12 h-1.5 bg-[#333] rounded-full mx-auto mb-8 md:hidden" />
+      <div className="absolute bottom-20 md:bottom-0 inset-x-0 md:relative md:w-[400px] md:h-[100dvh] z-20 flex flex-col justify-end md:justify-start">
+        <div className="bg-black/80 md:bg-[#0a0a0a] backdrop-blur-2xl max-h-[85vh] md:max-h-[100dvh] md:h-full border-t md:border-t-0 md:border-l border-[#222] p-6 md:p-8 rounded-t-[40px] md:rounded-none flex flex-col transition-all duration-500 overflow-y-auto">
+          <div className="w-12 h-1.5 bg-[#333] rounded-full mx-auto mb-8 md:hidden shrink-0" />
 
           {(workoutState === 'idle' || workoutState === 'finished') && (
-            <div className="flex-1 flex flex-col md:justify-center mb-8 md:mb-0">
+            <div className="flex-1 flex flex-col md:justify-center mb-8 md:mb-0 shrink-0">
               {workoutState === 'idle' && (
                 <div className="flex gap-4 justify-center mb-8">
                   <button onClick={() => setActivityType('run')} className={`px-6 py-2 rounded-full font-bold ${activityType === 'run' ? 'bg-white text-black font-bold' : 'bg-[#222] text-white'}`}>Run</button>
                   <button onClick={() => setActivityType('cycle')} className={`px-6 py-2 rounded-full font-bold ${activityType === 'cycle' ? 'bg-white text-black font-bold' : 'bg-[#222] text-white'}`}>Cycle</button>
                 </div>
               )}
-              <div className="text-center mb-10">
+              <div className="text-center mb-10 shrink-0">
                 <p className="text-gray-400 font-medium tracking-widest uppercase text-sm mb-2">
                   {workoutState === 'finished' ? 'Workout Summary' : 'Distance'}
                 </p>
@@ -404,7 +503,7 @@ export default function Activity() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 px-6 md:grid-cols-2">
+              <div className="grid grid-cols-2 gap-4 px-2 md:px-0 shrink-0">
                 <div className="text-center bg-[#111] p-4 rounded-2xl border border-[#222]">
                   <p className="text-gray-500 font-medium tracking-widest uppercase text-[10px] mb-1">Time</p>
                   <span className="font-display font-medium text-xl text-white">{formatTime(time)}</span>
@@ -426,10 +525,57 @@ export default function Activity() {
                    </>
                 )}
               </div>
+
+              {workoutState === 'finished' && (
+                <div className="mt-8 flex flex-col gap-6 shrink-0 w-full mb-8">
+                  {calculatedSplits.length > 0 && (
+                      <div>
+                          <h5 className="text-gray-300 text-xs font-bold mb-3 uppercase tracking-wider">Pace Splits (min/km)</h5>
+                          <div className="h-32 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={calculatedSplits}>
+                                    <XAxis dataKey="split" axisLine={false} tickLine={false} tick={{ fill: '#666', fontSize: 10 }} />
+                                    <Tooltip 
+                                        contentStyle={{ backgroundColor: '#111', borderColor: '#333', borderRadius: '8px' }}
+                                        itemStyle={{ color: '#fff' }}
+                                        cursor={{ fill: '#ffffff10' }}
+                                    />
+                                    <Bar dataKey="pace" fill="var(--color-brand-500)" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                      </div>
+                  )}
+
+                  {routeData && routeData.length > 0 && (
+                      <div>
+                          <h5 className="text-gray-300 text-xs font-bold mb-3 uppercase tracking-wider">Elevation (m)</h5>
+                          <div className="h-32 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={routeData}>
+                                    <defs>
+                                      <linearGradient id="colorAlt" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#4ade80" stopOpacity={0.3}/>
+                                        <stop offset="95%" stopColor="#4ade80" stopOpacity={0}/>
+                                      </linearGradient>
+                                    </defs>
+                                    <Tooltip 
+                                        contentStyle={{ backgroundColor: '#111', borderColor: '#333', borderRadius: '8px' }}
+                                        itemStyle={{ color: '#fff' }}
+                                        labelFormatter={() => ''}
+                                    />
+                                    <Area type="monotone" dataKey="altitude" stroke="#4ade80" fillOpacity={1} fill="url(#colorAlt)" />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                          </div>
+                      </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
-          <div className="flex items-center justify-center gap-4 mt-auto">
+          <div className="flex items-center justify-center gap-4 mt-auto shrink-0 pt-4">
             <AnimatePresence mode="popLayout">
               {workoutState === 'idle' && (
                 <motion.button

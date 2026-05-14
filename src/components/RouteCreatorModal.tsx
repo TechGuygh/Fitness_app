@@ -20,14 +20,6 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * c;
 }
 
-const customIcon = new L.Icon({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41]
-});
-
 function MapEvents({ onAddPoint }: { onAddPoint: (lat: number, lng: number) => void }) {
   useMapEvents({
     click(e) {
@@ -47,6 +39,14 @@ export default function RouteCreatorModal({ isOpen, onClose }: Props) {
   const [points, setPoints] = useState<[number, number][]>([]);
   const [routeName, setRouteName] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const customIcon = React.useMemo(() => new L.Icon({
+    iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+    iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+    shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41]
+  }), []);
 
   if (!isOpen) return null;
 

@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Search, Send, User, ChevronLeft, MoreVertical, Check, CheckCheck } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { motion, AnimatePresence } from "framer-motion";
 import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, getDocs, updateDoc, doc } from "firebase/firestore";
 import { db } from "@/src/lib/firebase";
 import { useAuth } from "@/src/components/auth/AuthProvider";
 import { formatDistanceToNow } from "date-fns";
 import { handleFirestoreError, OperationType } from "@/src/lib/firebase-error";
+import { useNavigate } from "react-router-dom";
 
 interface ChatMessage {
   id: string;
@@ -28,6 +28,7 @@ interface ChatUser {
 
 export default function Messages() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [users, setUsers] = useState<ChatUser[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -145,7 +146,15 @@ export default function Messages() {
         !isMobileListVisible ? "hidden md:flex" : "flex"
       )}>
         <div className="p-6 border-b border-[#222]">
-          <h2 className="text-2xl font-display font-bold text-white mb-4">Messages</h2>
+          <div className="flex items-center gap-2 mb-4">
+            <button 
+              onClick={() => navigate("/")}
+              className="p-2 -ml-2 text-gray-400 hover:text-white"
+            >
+              <ChevronLeft className="w-6 h-6" />
+            </button>
+            <h2 className="text-2xl font-display font-bold text-white">Messages</h2>
+          </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
             <input 
@@ -263,12 +272,13 @@ export default function Messages() {
                       "flex items-end gap-2 max-w-[85%] md:max-w-[70%]",
                       isMe ? "ml-auto flex-row-reverse" : "mr-auto"
                     )}>
-                      {!isMe && (
-                        <img 
-                          src={selectedUser?.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedUser?.displayName}`} 
-                          className="w-6 h-6 rounded-full mb-1 shrink-0" 
-                        />
-                      )}
+                      <img 
+                        src={isMe 
+                          ? (user?.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.displayName}`) 
+                          : (selectedUser?.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedUser?.displayName}`)
+                        } 
+                        className="w-6 h-6 rounded-full mb-1 shrink-0 bg-[#222]" 
+                      />
                       <div className={cn(
                         "p-4 rounded-3xl text-sm leading-relaxed",
                         isMe 
@@ -277,16 +287,18 @@ export default function Messages() {
                       )}>
                         {msg.text}
                         <div className={cn(
-                          "flex items-center gap-1 mt-1 justify-end",
-                          isMe ? "text-black/50" : "text-gray-500"
+                          "flex items-center gap-2 mt-1 justify-end",
+                          isMe ? "text-black/70" : "text-gray-500"
                         )}>
-                          <span className="text-[10px]">
+                          <span className="text-[10px] font-semibold">
                             {msg.createdAt?.toDate 
                               ? msg.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                               : ""}
                           </span>
                           {isMe && (
-                            msg.read ? <CheckCheck className="w-3 h-3" /> : <Check className="w-3 h-3" />
+                            msg.read 
+                             ? <span className="text-[10px] font-bold flex items-center gap-0.5"><CheckCheck className="w-3.5 h-3.5 text-blue-600" /> Read</span> 
+                             : <span className="text-[10px] font-semibold flex items-center gap-0.5 opacity-70"><Check className="w-3.5 h-3.5" /> Sent</span>
                           )}
                         </div>
                       </div>

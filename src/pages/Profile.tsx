@@ -9,7 +9,7 @@ import { format } from "date-fns";
 import { uploadBytes, getDownloadURL, ref } from "firebase/storage";
 import { updateProfile } from "firebase/auth";
 import { formatDistance } from "@/src/lib/utils";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 const BADGES = [
   { id: 1, name: "Early Bird", desc: "5 runs before 6 AM", icon: "🌅", unlocked: true },
@@ -20,7 +20,10 @@ const BADGES = [
 
 export default function Profile() {
   const { user } = useAuth();
+  const { userId } = useParams<{ userId: string }>();
   const navigate = useNavigate();
+  const targetUserId = userId || user?.uid;
+  
   const [profileData, setProfileData] = useState<any>(null);
   const [weeklyGoal, setWeeklyGoal] = useState<any>(null);
   const [friends, setFriends] = useState<any[]>([]);
@@ -34,6 +37,8 @@ export default function Profile() {
     followers: 0,
     following: 0,
   });
+
+  const isOwner = !userId || (user && userId === user.uid);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -58,15 +63,15 @@ export default function Profile() {
 
   useEffect(() => {
     if (user) {
-      const unsubUser = onSnapshot(doc(db, "users", user.uid), (doc) => {
+      const unsubUser = onSnapshot(doc(db, "users", targetUserId!), (doc) => {
         if (doc.exists()) setProfileData(doc.data());
       });
 
-      const unsubGoal = onSnapshot(doc(db, "goals", user.uid), (doc) => {
+      const unsubGoal = onSnapshot(doc(db, "goals", targetUserId!), (doc) => {
         if (doc.exists()) setWeeklyGoal(doc.data());
       });
 
-      const qActivities = query(collection(db, "activities"), where("userId", "==", user.uid));
+      const qActivities = query(collection(db, "activities"), where("userId", "==", targetUserId));
       const unsubActivities = onSnapshot(qActivities, (snap) => {
           let dist = 0;
           let timeSecs = 0;
@@ -84,25 +89,26 @@ export default function Profile() {
           }));
       });
 
-      const qFollowers = query(collection(db, "follows"), where("followingId", "==", user.uid));
+      const qFollowers = query(collection(db, "follows"), where("followingId", "==", targetUserId));
       const unsubFollowers = onSnapshot(qFollowers, (snap) => {
           setStats(prev => ({ ...prev, followers: snap.size }));
       });
 
-      const qFollowing = query(collection(db, "follows"), where("followerId", "==", user.uid));
+      const qFollowing = query(collection(db, "follows"), where("followerId", "==", targetUserId));
       const unsubFollowing = onSnapshot(qFollowing, (snap) => {
           setStats(prev => ({ ...prev, following: snap.size }));
       });
 
-      const unsubFriends = onSnapshot(query(collection(db, "friendships"), where("userIds", "array-contains", user.uid)), async (snap) => {
+      const unsubFriends = onSnapshot(query(collection(db, "friendships"), where("userIds", "array-contains", targetUserId)), async (snap) => {
         const friendIds = snap.docs.map(doc => {
            const ids = doc.data().userIds as string[];
-           return ids.find(id => id !== user.uid);
+           return ids.find(id => id !== targetUserId);
         }).filter(Boolean) as string[];
 
         if (friendIds.length > 0) {
-           const qUsers = query(collection(db, "users")); // Simple way, optimized would be where('uid', 'in', friendIds) but firestore has limits
-           const userSnap = await getDocs(qUsers);
+           const qUsers = query(collection(db, "users", ...[])); // Need a better way to fetch users
+           // Actually, let's keep it simple for now and use getDocs(query(collection(db, "users")))
+           const userSnap = await getDocs(query(collection(db, "users")));
            const friendProfiles = userSnap.docs
              .map(d => ({ id: d.id, ...d.data() }))
              .filter(u => friendIds.includes(u.id));
@@ -155,17 +161,21 @@ export default function Profile() {
             <div className="w-full h-full rounded-full bg-[#222] overflow-hidden">
               <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
             </div>
-            <button 
-               onClick={() => fileInputRef.current?.click()}
-               className="absolute bottom-0 right-0 bg-brand-500 text-black p-2 rounded-full hover:bg-brand-400 transition-colors shadow-lg"
-            >
-               {uploading ? <div className="w-4 h-4 rounded-full border-2 border-black border-t-transparent animate-spin"></div> : <Camera className="w-4 h-4" />}
-            </button>
+            {isOwner && (
+                <button 
+                   onClick={() => fileInputRef.current?.click()}
+                   className="absolute bottom-0 right-0 bg-brand-500 text-black p-2 rounded-full hover:bg-brand-400 transition-colors shadow-lg"
+                >
+                   {uploading ? <div className="w-4 h-4 rounded-full border-2 border-black border-t-transparent animate-spin"></div> : <Camera className="w-4 h-4" />}
+                </button>
+            )}
             <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
           </div>
-          <div className="absolute -bottom-2 -right-2 bg-brand-500 text-black font-bold text-xs px-2 py-1 rounded-full border-2 border-black">
-            LVL {level}
-          </div>
+          {isOwner && (
+            <div className="absolute -bottom-2 -right-2 bg-brand-500 text-black font-bold text-xs px-2 py-1 rounded-full border-2 border-black">
+                LVL {level}
+            </div>
+          )}
         </div>
         
         <div className="flex-1">
@@ -184,13 +194,14 @@ export default function Profile() {
               </button>
             </div>
           ) : (
-             <h2 className="text-3xl font-display font-bold text-white mb-1 cursor-pointer flex items-center gap-2" onClick={() => setIsEditingName(true)}>
+             <h2 className="text-3xl font-display font-bold text-white mb-1 cursor-pointer flex items-center gap-2" onClick={() => isOwner && setIsEditingName(true)}>
                {user.displayName === "Athlete" ? (user.email?.split("@")[0] || "User") : (user.displayName || 'User')}
-               <span className="text-xs text-gray-500 font-normal underline">Edit</span>
+               {isOwner && <span className="text-xs text-gray-500 font-normal underline">Edit</span>}
              </h2>
           )}
           <p className="text-gray-400 mb-4 font-medium">Joined {joinDate} • Free Member</p>
           
+          <div className="flex gap-4">
           <div className="flex gap-4">
             <div className="text-center">
               <p className="text-xl font-bold text-white">{stats.followers}</p>
@@ -207,11 +218,14 @@ export default function Profile() {
               <p className="text-xs text-gray-500 uppercase tracking-widest font-semibold">Activities</p>
             </div>
           </div>
+          </div>
         </div>
         
-        <button className="w-12 h-12 bg-[#111] border border-[#222] rounded-full flex items-center justify-center text-gray-400 hover:text-white hover:bg-[#222] transition-colors md:self-start">
-          <Settings className="w-5 h-5" />
-        </button>
+        {isOwner && (
+            <button className="w-12 h-12 bg-[#111] border border-[#222] rounded-full flex items-center justify-center text-gray-400 hover:text-white hover:bg-[#222] transition-colors md:self-start">
+              <Settings className="w-5 h-5" />
+            </button>
+        )}
       </div>
 
       {/* Friends List */}
@@ -246,7 +260,8 @@ export default function Profile() {
                     <img src={friend.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${friend.displayName}`} className="w-full h-full rounded-full object-cover" />
                  </div>
                  <p className="text-[10px] text-white font-bold text-center line-clamp-1">{friend.displayName.split(' ')[0]}</p>
-                 <p className="text-[8px] text-brand-500 font-bold uppercase tracking-widest text-center">LVL {friend.level || 1}</p>
+                 <p className="text-[8px] text-brand-500 font-bold uppercase tracking-widest text-center mb-2">LVL {friend.level || 1}</p>
+                 <button onClick={() => navigate(`/profile/${friend.id}`)} className="text-[9px] bg-brand-500 text-black font-bold px-2 py-1 rounded-full">View Profile</button>
                </motion.div>
              ))
            )}

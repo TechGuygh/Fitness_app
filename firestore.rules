@@ -23,7 +23,7 @@ service cloud.firestore {
     
     function isValidActivityCreate(data) {
        return data.keys().hasAll(['userId', 'distance', 'timeSeconds', 'createdAt']) &&
-              data.keys().size() >= 4 && data.keys().size() <= 13 &&
+              data.keys().size() >= 4 && data.keys().size() <= 14 &&
               data.distance is number &&
               data.timeSeconds is number &&
               data.userId == request.auth.uid &&
@@ -33,6 +33,7 @@ service cloud.firestore {
               (!data.keys().hasAny(['status']) || (data.status is string && data.status.size() <= 20)) &&
               (!data.keys().hasAny(['updatedAt']) || data.updatedAt == request.time) &&
               (!data.keys().hasAny(['route']) || data.route is list) &&
+              (!data.keys().hasAny(['currentPosition']) || (data.currentPosition is list && data.currentPosition.size() == 2)) &&
               (!data.keys().hasAny(['path']) || data.path is list) &&
               (!data.keys().hasAny(['likes']) || data.likes is number) &&
               (!data.keys().hasAny(['isRoute']) || data.isRoute is bool) &&
@@ -128,6 +129,24 @@ service cloud.firestore {
               data.joinedAt == request.time;
     }
 
+    function isValidLiveTrackingCreate(data) {
+       return data.keys().hasAll(['userId', 'routeId', 'position', 'updatedAt']) &&
+              data.keys().size() >= 4 && data.keys().size() <= 6 &&
+              data.userId == request.auth.uid &&
+              data.routeId is string &&
+              data.position is list && data.position.size() == 2 &&
+              data.updatedAt == request.time;
+    }
+
+    match /liveTracking/{userId} {
+      allow get: if isSignedIn() && isValidId(userId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidLiveTrackingCreate(incoming());
+      allow update: if isSignedIn() && request.auth.uid == userId && isValidId(userId) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['position', 'updatedAt']);
+      allow delete: if isSignedIn() && request.auth.uid == userId;
+    }
+
     match /users/{userId} {
       allow get: if isSignedIn() && isValidId(userId);
       allow list: if isSignedIn();
@@ -146,7 +165,7 @@ service cloud.firestore {
             existing().userId == request.auth.uid && 
             incoming().userId == existing().userId &&
             existing().get('status', '') != 'finished' &&
-            incoming().diff(existing()).affectedKeys().hasOnly(['distance', 'timeSeconds', 'pace', 'status', 'updatedAt']) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['distance', 'timeSeconds', 'pace', 'status', 'updatedAt', 'currentPosition', 'route', 'routeId']) &&
             incoming().updatedAt == request.time &&
             ( !incoming().diff(existing()).affectedKeys().hasAny(['status']) || (incoming().status is string && incoming().status.size() <= 20) )
           ) ||
@@ -248,9 +267,36 @@ service cloud.firestore {
       );
     }
 
+    match /runs/{runId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(runId) && incoming().creatorId == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(runId) && existing().creatorId == request.auth.uid;
+      allow delete: if isSignedIn() && isValidId(runId) && existing().creatorId == request.auth.uid;
+    }
+
+    match /runParticipants/{participantId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(participantId) && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(participantId) && incoming().userId == request.auth.uid;
+      allow delete: if isSignedIn() && isValidId(participantId) && existing().userId == request.auth.uid;
+    }
+
+    match /runInvitations/{invitationId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(invitationId) && incoming().senderId == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(invitationId) && existing().receiverId == request.auth.uid;
+      allow delete: if isSignedIn() && isValidId(invitationId) && (existing().senderId == request.auth.uid || existing().receiverId == request.auth.uid);
+    }
     match /settings/{userId} {
       allow get: if isSignedIn() && request.auth.uid == userId;
-      allow write: if isSignedIn() && request.auth.uid == userId;
+      allow write: if isSignedIn() && request.auth.uid == userId && (
+        (!incoming().keys().hasAny(['paceThreshold']) || incoming().paceThreshold is number) &&
+        (!incoming().keys().hasAny(['distanceThreshold']) || incoming().distanceThreshold is number) &&
+        (!incoming().keys().hasAny(['updatedAt']) || incoming().updatedAt == request.time)
+      );
     }
   }
 }

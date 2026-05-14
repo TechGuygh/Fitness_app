@@ -210,8 +210,8 @@ export default function Community() {
             comments: 0,
             date: format(date, "MMM d, h:mm a"),
             image: data.activityType === 'run' 
-              ? "https://images.unsplash.com/photo-1541252860246-bea5bec28ef8?auto=format&fit=crop&q=80&w=600&h=400"
-              : "https://images.unsplash.com/photo-1517646287270-a5a9ca602ebc?auto=format&fit=crop&q=80&w=600&h=400",
+              ? "https://images.unsplash.com/photo-1472214103451-9374bd1c798e?auto=format&fit=crop&q=80&w=600&h=400"
+              : "https://images.unsplash.com/photo-1506744626753-1fa28f67c9bf?auto=format&fit=crop&q=80&w=600&h=400",
             rawDate: date,
             milestone: data.distance >= 10 ? "10K Milestone! 🎉" : data.distance >= 5 ? "5K Completed! 🏆" : null
           };
