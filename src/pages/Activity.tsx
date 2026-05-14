@@ -189,6 +189,25 @@ export default function Activity() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [loadingSettings, setLoadingSettings] = useState(true);
   const [liveUsers, setLiveUsers] = useState<any[]>([]);
+  const lastLiveUpdate = useRef(0);
+
+  useEffect(() => {
+    if (workoutState === 'tracking' && activeId && currentPosition && user) {
+        const now = Date.now();
+        if (now - lastLiveUpdate.current > 5000) {
+            lastLiveUpdate.current = now;
+            setDoc(doc(db, "liveTracking", `${activeId}_${user.uid}`), {
+                routeId: activeId,
+                userId: user.uid,
+                userName: user.displayName || 'Athlete',
+                position: currentPosition,
+                distance,
+                time,
+                updatedAt: serverTimestamp()
+            }, { merge: true }).catch(e => console.error(e));
+        }
+    }
+  }, [currentPosition, workoutState, activeId, user, distance, time]);
 
   useEffect(() => {
     if (activeId && user) {
