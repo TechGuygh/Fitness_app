@@ -7,7 +7,7 @@ import { KalmanFilter } from "@/src/lib/KalmanFilter";
 
 interface WorkoutContextType {
   workoutState: "idle" | "tracking" | "paused" | "finished";
-  activityType: "run" | "cycle";
+  activityType: "run" | "cycle" | "walk" | "hike";
   time: number;
   distance: number;
   routePath: [number, number][];
@@ -15,12 +15,12 @@ interface WorkoutContextType {
   currentPosition: [number, number] | null;
   gpsSignal: "strong" | "medium" | "weak";
   autoPaused: boolean;
-  startWorkout: (type: "run" | "cycle") => void;
+  startWorkout: (type: "run" | "cycle" | "walk" | "hike") => void;
   pauseWorkout: () => void;
   resumeWorkout: () => void;
   stopWorkout: () => Promise<string | null>;
   resetWorkout: () => void;
-  setActivityType: (type: "run" | "cycle") => void;
+  setActivityType: (type: "run" | "cycle" | "walk" | "hike") => void;
 }
 
 const WorkoutContext = createContext<WorkoutContextType | undefined>(undefined);
@@ -44,7 +44,7 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
 export function WorkoutProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [workoutState, setWorkoutState] = useState<"idle" | "tracking" | "paused" | "finished">("idle");
-  const [activityType, setActivityType] = useState<"run" | "cycle">("run");
+  const [activityType, setActivityType] = useState<"run" | "cycle" | "walk" | "hike">("run");
   const [time, setTime] = useState(0);
   const [distance, setDistance] = useState(0);
   const [routePath, setRoutePath] = useState<[number, number][]>([]);
@@ -184,7 +184,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(interval);
   }, [workoutState]);
 
-  const startWorkout = (type: "run" | "cycle") => {
+  const startWorkout = (type: "run" | "cycle" | "walk" | "hike") => {
     setActivityType(type);
     setWorkoutState("tracking");
     setRoutePath(currentPosition ? [currentPosition] : []);

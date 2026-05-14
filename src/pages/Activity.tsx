@@ -511,9 +511,11 @@ export default function Activity() {
           {(workoutState === 'idle' || workoutState === 'finished') && (
             <div className="flex-1 flex flex-col md:justify-center mb-8 md:mb-0 shrink-0">
               {workoutState === 'idle' && (
-                <div className="flex gap-4 justify-center mb-8">
+                <div className="flex flex-wrap gap-3 justify-center mb-8">
                   <button onClick={() => setActivityType('run')} className={`px-6 py-2 rounded-full font-bold ${activityType === 'run' ? 'bg-white text-black font-bold' : 'bg-[#222] text-white'}`}>Run</button>
                   <button onClick={() => setActivityType('cycle')} className={`px-6 py-2 rounded-full font-bold ${activityType === 'cycle' ? 'bg-white text-black font-bold' : 'bg-[#222] text-white'}`}>Cycle</button>
+                  <button onClick={() => setActivityType('walk')} className={`px-6 py-2 rounded-full font-bold ${activityType === 'walk' ? 'bg-white text-black font-bold' : 'bg-[#222] text-white'}`}>Walk</button>
+                  <button onClick={() => setActivityType('hike')} className={`px-6 py-2 rounded-full font-bold ${activityType === 'hike' ? 'bg-white text-black font-bold' : 'bg-[#222] text-white'}`}>Hike</button>
                 </div>
               )}
               <div className="text-center mb-10 shrink-0">
@@ -532,8 +534,14 @@ export default function Activity() {
                   <span className="font-display font-medium text-xl text-white">{formatTime(time)}</span>
                 </div>
                 <div className="text-center bg-[#111] p-4 rounded-2xl border border-[#222]">
-                  <p className="text-gray-500 font-medium tracking-widest uppercase text-[10px] mb-1">Avg Pace</p>
-                  <span className="font-display font-medium text-xl text-white">{PaceFormatted}</span>
+                  <p className="text-gray-500 font-medium tracking-widest uppercase text-[10px] mb-1">
+                    {activityType === 'cycle' ? 'Avg Speed' : 'Avg Pace'}
+                  </p>
+                  <span className="font-display font-medium text-xl text-white">
+                    {activityType === 'cycle' 
+                      ? (time > 0 ? (distance / (time / 3600)).toFixed(1) + ' km/h' : '0.0 km/h')
+                      : PaceFormatted}
+                  </span>
                 </div>
                 {workoutState === 'finished' && (
                    <>
