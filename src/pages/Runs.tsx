@@ -5,7 +5,7 @@ import { db } from "@/src/lib/firebase";
 import { useAuth } from "@/src/components/auth/AuthProvider";
 import { useNavigate } from "react-router-dom";
 import { Play, Plus, Search, Calendar, MapPin, Navigation } from "lucide-react";
-import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Polyline, useMapEvents, useMap } from "react-leaflet";
 import { GeoSearchControl, OpenStreetMapProvider } from "leaflet-geosearch";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -55,6 +55,8 @@ export default function Runs() {
   const [startResults, setStartResults] = useState<any[]>([]);
   const [destSearch, setDestSearch] = useState("");
   const [destResults, setDestResults] = useState<any[]>([]);
+  const [routeGeometry, setRouteGeometry] = useState<[number, number][] | null>(null);
+  const [mapPickMode, setMapPickMode] = useState<'start' | 'dest'>('start');
   const [filterText, setFilterText] = useState("");
 
   useEffect(() => {
@@ -101,13 +103,15 @@ export default function Runs() {
 
   useEffect(() => {
     if (formData.startLocation && formData.destinationLocation) {
-        fetch(`https://router.project-osrm.org/route/v1/foot/${formData.startLocation[1]},${formData.startLocation[0]};${formData.destinationLocation[1]},${formData.destinationLocation[0]}?overview=false`)
+        fetch(`https://router.project-osrm.org/route/v1/foot/${formData.startLocation[1]},${formData.startLocation[0]};${formData.destinationLocation[1]},${formData.destinationLocation[0]}?overview=full&geometries=geojson`)
             .then(res => res.json())
             .then(data => {
                 if (data.routes && data.routes.length > 0) {
                     const distanceKm = data.routes[0].distance / 1000;
                     const durationMin = data.routes[0].duration / 60;
                     const pace = (durationMin / distanceKm).toFixed(2);
+                    const coords = data.routes[0].geometry.coordinates.map((coord: [number, number]) => [coord[1], coord[0]] as [number, number]);
+                    setRouteGeometry(coords);
                     setFormData((prev: any) => ({
                         ...prev,
                         distanceGoal: distanceKm.toFixed(2),
@@ -119,12 +123,15 @@ export default function Runs() {
                console.error("Routing error", err);
                const dist = getDistance(formData.startLocation[0], formData.startLocation[1], formData.destinationLocation[0], formData.destinationLocation[1]);
                const pace = 5.5; 
+               setRouteGeometry([formData.startLocation, formData.destinationLocation]);
                setFormData((prev: any) => ({
                    ...prev,
                    distanceGoal: dist.toFixed(2),
                    estimatedPace: pace.toFixed(2)
                }));
             });
+    } else {
+        setRouteGeometry(null);
     }
   }, [formData.startLocation, formData.destinationLocation]);
 
@@ -295,11 +302,39 @@ export default function Runs() {
                  )}
             </div>
 
+            <div className="flex gap-2 mb-2">
+                <button 
+                  type="button" 
+                  onClick={() => setMapPickMode('start')}
+                  className={`flex-1 p-2 rounded text-xs font-bold ${mapPickMode === 'start' ? 'bg-brand-500 text-black' : 'bg-[#222] text-white'}`}
+                >
+                  Pick Start on Map
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => setMapPickMode('dest')}
+                  className={`flex-1 p-2 rounded text-xs font-bold ${mapPickMode === 'dest' ? 'bg-brand-500 text-black' : 'bg-[#222] text-white'}`}
+                >
+                  Pick Dest on Map
+                </button>
+            </div>
             <div className="h-64 rounded-xl overflow-hidden border border-[#333] relative z-0">
                 <MapContainer center={formData.startLocation || [5.6037, -0.1870]} zoom={13} className="h-full w-full">
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                    {formData.startLocation && <LocationPicker position={formData.startLocation} setPosition={(pos) => setFormData({...formData, startLocation: pos})} />}
-                    {formData.destinationLocation && <Marker position={formData.destinationLocation as [number, number]} />}
+                    <LocationPicker 
+                      key={mapPickMode}
+                      position={mapPickMode === 'start' ? formData.startLocation : formData.destinationLocation} 
+                      setPosition={(pos) => {
+                          if (mapPickMode === 'start') {
+                              setFormData({...formData, startLocation: pos});
+                          } else {
+                              setFormData({...formData, destinationLocation: pos});
+                          }
+                      }} 
+                    />
+                    {mapPickMode === 'dest' && formData.startLocation && <Marker position={formData.startLocation as [number, number]} opacity={0.6} />}
+                    {mapPickMode === 'start' && formData.destinationLocation && <Marker position={formData.destinationLocation as [number, number]} opacity={0.6} />}
+                    {routeGeometry && <Polyline positions={routeGeometry} color="#3b82f6" weight={5} opacity={0.7} />}
                     {formData.startLocation && <Recenter lat={formData.startLocation[0]} lng={formData.startLocation[1]} />}
                     {formData.destinationLocation && !formData.startLocation && <Recenter lat={formData.destinationLocation[0]} lng={formData.destinationLocation[1]} />}
                 </MapContainer>

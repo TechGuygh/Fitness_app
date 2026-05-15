@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Play, Pause, Square, MapPin, X, Signal, Settings } from "lucide-react";
+import { Play, Pause, Square, MapPin, X, Signal, Settings, Share2 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from "react-leaflet";
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip, BarChart, Bar, ComposedChart, Line, Legend } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
@@ -332,6 +332,26 @@ export default function Activity() {
     resetWorkout();
     setCurrentActivityId(null);
     setShowConfirmStop(false);
+  };
+
+  const handleShareWorkout = async () => {
+    const shareText = `I just completed a ${distance.toFixed(2)} km ${activityType} in ${formatTime(time)} on Runly!`;
+    const shareUrl = window.location.origin;
+
+    try {
+        if (navigator.share) {
+            await navigator.share({
+                title: 'My Workout on Runly',
+                text: shareText,
+                url: shareUrl,
+            });
+        } else {
+            await navigator.clipboard.writeText(`${shareText} ${shareUrl}`);
+            alert('Workout details copied to clipboard!');
+        }
+    } catch (error) {
+        console.error("Error sharing", error);
+    }
   };
 
   const currentPace = distance > 0 ? (time / 60) / distance : 0;
@@ -667,8 +687,11 @@ export default function Activity() {
                 </motion.div>
               )}
               {(workoutState === 'finished') && (
-                 <motion.div key="finished-controls" className="flex items-center justify-center gap-4 w-full" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}>
-                  <button onClick={handleClose} className="flex-1 bg-[#222] text-white hover:bg-[#333] font-display font-bold text-lg py-5 rounded-full flex items-center justify-center gap-2 active:scale-95 transition-all border border-[#333]">
+                 <motion.div key="finished-controls" className="flex flex-col md:flex-row items-center justify-center gap-4 w-full" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}>
+                  <button onClick={handleShareWorkout} className="w-full md:flex-1 bg-brand-500 text-black hover:bg-brand-400 font-display font-bold text-lg py-5 rounded-full flex items-center justify-center gap-2 active:scale-95 transition-all">
+                    <Share2 className="w-5 h-5" /> SHARE
+                  </button>
+                  <button onClick={handleClose} className="w-full md:flex-1 bg-[#222] text-white hover:bg-[#333] font-display font-bold text-lg py-5 rounded-full flex items-center justify-center gap-2 active:scale-95 transition-all border border-[#333]">
                     <X className="w-5 h-5" /> CLOSE
                   </button>
                 </motion.div>
