@@ -202,7 +202,7 @@ export default function Runs() {
             </div>
          </div>
       )}
-      <button onClick={() => setShowForm(!showForm)} className="mb-4 bg-brand-500 text-black px-4 py-2 rounded-xl text-sm font-bold">
+      <button onClick={() => setShowForm(!showForm)} className="mb-4 w-full md:w-auto bg-brand-500 text-black px-6 py-3 rounded-xl text-sm font-bold shadow-lg shadow-brand-500/20 active:scale-95 transition-all">
         {showForm ? "Cancel" : "Create New Run"}
       </button>
 
@@ -272,7 +272,9 @@ export default function Runs() {
                 <option value="training">Training</option>
                 <option value="marathon">Marathon Prep</option>
             </select>
-            <button type="submit" className="w-full bg-brand-500 text-black p-2 rounded-xl font-bold">Create Run</button>
+            <div className="flex w-full justify-end">
+              <button type="submit" className="w-full md:w-auto bg-brand-500 text-black px-8 py-3 rounded-xl font-bold mt-2 shadow-lg shadow-brand-500/20 active:scale-95 transition-all">Create Run</button>
+            </div>
         </form>
       )}
 
@@ -303,7 +305,7 @@ export default function Runs() {
                     e.stopPropagation();
                     joinRun(run.id);
                   }} 
-                  className="mt-4 w-full bg-brand-500 text-black px-4 py-2.5 rounded-xl text-sm font-bold active:scale-95 transition-all"
+                  className="mt-4 w-full md:w-auto bg-brand-500 text-black px-8 py-2.5 rounded-xl text-sm font-bold active:scale-95 transition-all"
                 >
                   Join Run
                 </button>
@@ -314,7 +316,7 @@ export default function Runs() {
                     e.stopPropagation();
                     navigate(`/activity?runId=${run.id}`);
                   }} 
-                  className="mt-4 w-full bg-white text-black px-4 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 active:scale-95 transition-all shadow-[0_0_20px_rgba(255,255,255,0.1)]"
+                  className="mt-4 w-full md:w-auto bg-white text-black px-8 py-2.5 rounded-xl text-sm font-bold flex md:inline-flex items-center justify-center gap-2 active:scale-95 transition-all shadow-[0_0_20px_rgba(255,255,255,0.1)]"
                 >
                   <Navigation className="w-4 h-4 fill-black" /> Track Live Now
                 </button>

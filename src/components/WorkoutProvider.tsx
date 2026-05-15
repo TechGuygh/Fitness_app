@@ -259,7 +259,7 @@ export function WorkoutProvider({ children }: { children: React.ReactNode }) {
           pace: time > 0 ? (time / 60) / distance : 0,
           status: "finished",
           updatedAt: serverTimestamp(),
-          route: routePath,
+          route: routePath.map(p => ({ lat: p[0], lng: p[1] })),
           routeData,
           splits,
           ...(ghostId ? { routeId: ghostId } : {})

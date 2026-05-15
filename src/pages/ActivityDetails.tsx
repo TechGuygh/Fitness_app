@@ -54,7 +54,7 @@ export default function ActivityDetails() {
 
       <div className="absolute inset-0 z-0">
         <MapContainer 
-          center={mapCenter as [number, number]} 
+          center={mapCenter as any} 
           zoom={15} 
           zoomControl={false}
           className="w-full h-full pb-[30vh]"
