@@ -15,15 +15,18 @@ import { AuthProvider } from "@/src/components/auth/AuthProvider";
 import { WorkoutProvider } from "@/src/components/WorkoutProvider";
 import Messages from "@/src/pages/Messages";
 
+import ActivityDetails from "@/src/pages/ActivityDetails";
+
 export default function App() {
   return (
     <AuthProvider>
       <WorkoutProvider>
         <BrowserRouter>
           <Routes>
+            <Route path="/activity" element={<Activity />} />
+            <Route path="/activity-details/:activityId" element={<ActivityDetails />} />
             <Route element={<AppLayout />}>
               <Route path="/" element={<Dashboard />} />
-              <Route path="/activity" element={<Activity />} />
               <Route path="/community" element={<Community />} />
               <Route path="/runs" element={<Runs />} />
               <Route path="/runs/:runId" element={<RunDetails />} />

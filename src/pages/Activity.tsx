@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Play, Pause, Square, MapPin, X, Signal, Settings, Share2 } from "lucide-react";
+import { Play, Pause, Square, MapPin, X, Signal, Settings, Share2, ChevronLeft } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from "react-leaflet";
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip, BarChart, Bar, ComposedChart, Line, Legend } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
@@ -9,7 +9,7 @@ import { useAuth } from "@/src/components/auth/AuthProvider";
 import { db } from "@/src/lib/firebase";
 import { doc, setDoc, collection, serverTimestamp, getDoc, query, where, onSnapshot } from "firebase/firestore";
 import { handleFirestoreError, OperationType } from "@/src/lib/firebase-error";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { KalmanFilter } from "@/src/lib/KalmanFilter";
 import ActivitySettingsModal from "@/src/components/ActivitySettingsModal";
 
@@ -149,6 +149,7 @@ import { formatDistance } from "@/src/lib/utils";
 
 export default function Activity() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   
   // Create icons lazily
   const startIcon = React.useMemo(() => createCustomIcon("#22c55e", "S"), []);
@@ -411,6 +412,15 @@ export default function Activity() {
         )}
       </AnimatePresence>
       
+      <div className="absolute top-8 left-4 md:left-8 z-[500]">
+        <button 
+          onClick={() => navigate('/')} 
+          className="w-10 h-10 bg-black/80 backdrop-blur-md rounded-full flex items-center justify-center border border-[#333] hover:bg-[#222] active:scale-95 transition-all text-white shadow-lg"
+        >
+          <ChevronLeft className="w-6 h-6" />
+        </button>
+      </div>
+
       <div className="absolute inset-0 z-0">
         <MapContainer 
           center={mapCenter} 
@@ -461,7 +471,7 @@ export default function Activity() {
         )}
         
         {(workoutState === 'tracking' || workoutState === 'paused') && (
-          <div className="absolute top-20 md:top-8 left-4 md:left-8 z-[400]">
+          <div className="absolute top-[180px] md:top-20 left-4 md:left-8 z-[400]">
             <motion.div 
               initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full backdrop-blur-xl border border-[#333]/50 shadow-lg ${
@@ -483,7 +493,7 @@ export default function Activity() {
           {liveUsers.length > 0 && (workoutState === 'tracking' || workoutState === 'paused') && (
             <motion.div 
               initial={{ x: -100, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -100, opacity: 0 }}
-              className="absolute top-36 md:top-32 left-4 z-[400] flex flex-col gap-2 max-w-[150px]"
+              className="absolute top-[230px] md:top-32 left-4 z-[400] flex flex-col gap-2 max-w-[150px]"
             >
               <div className="bg-black/80 backdrop-blur-md border border-[#333] rounded-2xl p-3 shadow-2xl overflow-hidden">
                 <p className="text-[10px] text-brand-500 font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5">
@@ -507,7 +517,7 @@ export default function Activity() {
           {(workoutState === 'tracking' || workoutState === 'paused') && (
             <motion.div 
               initial={{ y: -100, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -100, opacity: 0 }}
-              className="absolute top-8 inset-x-4 md:left-[20%] md:right-[20%] z-[400] flex flex-col gap-2"
+              className="absolute top-24 md:top-8 inset-x-4 md:left-[20%] md:right-[20%] z-[400] flex flex-col gap-2"
             >
               {autoPaused && (
                 <div className="bg-yellow-500 text-black font-bold py-2 rounded-2xl text-center text-sm shadow-lg">
@@ -538,9 +548,9 @@ export default function Activity() {
         </AnimatePresence>
       </div>
 
-      <div className="absolute bottom-20 md:bottom-6 inset-x-0 z-20 flex flex-col justify-end pointer-events-none">
+      <div className="absolute bottom-0 md:bottom-6 inset-x-0 z-20 flex flex-col justify-end pointer-events-none">
         <div className="bg-black/80 backdrop-blur-2xl max-h-[85vh] border-t md:border border-[#222] p-6 md:p-8 rounded-t-[40px] md:rounded-[40px] flex flex-col transition-all duration-500 overflow-y-auto pointer-events-auto w-full md:w-[600px] mx-auto md:shadow-2xl md:shadow-black/50">
-          <div className="w-12 h-1.5 bg-[#333] rounded-full mx-auto mb-8 md:hidden shrink-0" />
+          <div className="w-12 h-1.5 bg-[#333] rounded-full mx-auto mb-6 md:hidden shrink-0" />
 
           {(workoutState === 'idle' || workoutState === 'finished') && (
             <div className="flex-1 flex flex-col md:justify-center mb-8 md:mb-0 shrink-0">

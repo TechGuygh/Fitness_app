@@ -498,7 +498,7 @@ export default function Dashboard() {
                 initial={{ opacity: 0, x: -20 }} 
                 animate={{ opacity: 1, x: 0 }} 
                 transition={{ delay: 0.4 + (i * 0.1) }}
-                onClick={() => setExpandedId(expandedId === activity.id ? null : activity.id)}
+                onClick={() => navigate('/activity-details/' + activity.id)}
                 className="bg-[#111] border border-[#222] rounded-2xl p-4 flex flex-col hover:bg-[#161616] transition-colors cursor-pointer block"
               >
                <div className="flex gap-4">
