@@ -9,7 +9,6 @@ import { db } from "@/src/lib/firebase";
 
 const navItems = [
   { icon: Home, label: "Home", path: "/" },
-  { icon: Calendar, label: "Runs", path: "/runs" },
   { icon: Users, label: "Community", path: "/community" },
   { icon: MessageSquare, label: "Messages", path: "/messages" },
   { icon: User, label: "Profile", path: "/profile" },
@@ -105,7 +104,7 @@ export default function AppLayout() {
         <nav className="md:hidden fixed bottom-0 inset-x-0 h-20 bg-black/90 backdrop-blur-xl border-t border-[#222] z-50">
           <div className="flex h-full items-center justify-around px-2 relative px-4">
             {navItems.map((item) => {
-              const isActive = location.pathname === item.path;
+              const isActive = location.pathname === item.path || (item.path !== '/' && location.pathname.startsWith(item.path));
               return (
                 <NavLink
                   key={item.path}

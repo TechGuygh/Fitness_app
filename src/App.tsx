@@ -29,8 +29,8 @@ export default function App() {
               <Route path="/runs/:runId" element={<RunDetails />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/profile/:userId" element={<Profile />} />
+              <Route path="/messages" element={<Messages />} />
             </Route>
-            <Route path="/messages" element={<Messages />} />
           </Routes>
         </BrowserRouter>
       </WorkoutProvider>

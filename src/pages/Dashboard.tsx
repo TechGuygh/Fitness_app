@@ -20,6 +20,8 @@ interface WeeklyGoal {
   target: number;
 }
 
+import Runs from './Runs';
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const { user, logOut } = useAuth();
@@ -638,6 +640,10 @@ export default function Dashboard() {
              ))}
            </div>
          )}
+      </div>
+
+      <div className="pb-10">
+        <Runs />
       </div>
 
       <RouteCreatorModal isOpen={isRouteCreatorOpen} onClose={() => setIsRouteCreatorOpen(false)} />

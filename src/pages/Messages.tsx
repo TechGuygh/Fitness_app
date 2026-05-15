@@ -139,7 +139,7 @@ export default function Messages() {
   );
 
   return (
-    <div className="flex h-[calc(100vh-64px)] md:h-screen bg-black overflow-hidden">
+    <div className="flex h-[calc(100vh-144px)] mt-16 md:mt-0 md:h-screen bg-black overflow-hidden relative">
       {/* Sidebar - User List */}
       <div className={cn(
         "flex-col w-full md:w-80 border-r border-[#222] bg-[#0a0a0a]",
@@ -147,12 +147,6 @@ export default function Messages() {
       )}>
         <div className="p-6 border-b border-[#222]">
           <div className="flex items-center gap-2 mb-4">
-            <button 
-              onClick={() => navigate("/")}
-              className="p-2 -ml-2 text-gray-400 hover:text-white"
-            >
-              <ChevronLeft className="w-6 h-6" />
-            </button>
             <h2 className="text-2xl font-display font-bold text-white">Messages</h2>
           </div>
           <div className="relative">

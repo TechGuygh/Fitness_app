@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { doc, getDoc, onSnapshot, collection, query, where, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/src/lib/firebase";
 import { useAuth } from "@/src/components/auth/AuthProvider";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
@@ -21,7 +21,24 @@ export default function RunDetails() {
     const [participants, setParticipants] = useState<any[]>([]);
     const [liveData, setLiveData] = useState<any[]>([]);
     const [myFriends, setMyFriends] = useState<any[]>([]);
+    const [routeGeometry, setRouteGeometry] = useState<[number, number][] | null>(null);
     const { user } = useAuth(); // Need to import this hook
+
+    useEffect(() => {
+        if (run && run.startLocation && run.destinationLocation) {
+            fetch(`https://router.project-osrm.org/route/v1/foot/${run.startLocation[1]},${run.startLocation[0]};${run.destinationLocation[1]},${run.destinationLocation[0]}?overview=full&geometries=geojson`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.routes && data.routes.length > 0) {
+                        const coords = data.routes[0].geometry.coordinates.map((coord: [number, number]) => [coord[1], coord[0]] as [number, number]);
+                        setRouteGeometry(coords);
+                    }
+                })
+                .catch(err => {
+                   console.error("Routing error getting details map", err);
+                });
+        }
+    }, [run]);
 
     useEffect(() => {
         if (!runId) return;
@@ -87,8 +104,11 @@ export default function RunDetails() {
             <p className="mb-2">Time: {run.date} {run.time}</p>
             
             <div className="h-64 mt-4 rounded-xl overflow-hidden border border-[#333]">
-                <MapContainer center={run.location || [5.6, -0.1]} zoom={13} className="h-full w-full">
+                <MapContainer center={run.startLocation || run.location || [5.6, -0.1]} zoom={13} className="h-full w-full">
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    {(run.startLocation || run.location) && <Marker position={(run.startLocation || run.location) as [number, number]}><Popup>Start</Popup></Marker>}
+                    {run.destinationLocation && <Marker position={run.destinationLocation as [number, number]}><Popup>Destination</Popup></Marker>}
+                    {routeGeometry && <Polyline positions={routeGeometry} color="#3b82f6" weight={5} opacity={0.7} />}
                     {liveData.map(user => (
                         <Marker key={user.userId} position={user.position as [number, number]}>
                             <Popup>{user.userName}</Popup>
