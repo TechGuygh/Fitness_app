@@ -36,8 +36,12 @@ export default function Auth() {
         setErrorMsg('Password should be at least 6 characters.');
       } else if (error?.code === 'auth/operation-not-allowed') {
         setErrorMsg('Email/Password login is not enabled. Please enable it in your Firebase Console under Authentication -> Sign-in method.');
+      } else if (error?.code === 'auth/network-request-failed') {
+        setErrorMsg('Network error. Please check your internet connection and try again.');
       } else {
-        setErrorMsg(error.message || 'An error occurred during authentication.');
+        let msg = error?.message || 'An error occurred during authentication.';
+        msg = msg.replace(/^Firebase:\s*(Error\s*)?/, '').replace(/\s*\(auth\/[a-z0-9\-]+\)\.?$/, '');
+        setErrorMsg(msg || 'An error occurred during authentication.');
       }
     } finally {
       setLoading(false);
@@ -171,7 +175,20 @@ export default function Auth() {
             </div>
 
             <button 
-              onClick={signIn}
+              onClick={async () => {
+                setErrorMsg("");
+                try {
+                  await signIn();
+                } catch (error: any) {
+                  if (error?.code === 'auth/network-request-failed') {
+                    setErrorMsg('Network error. Please check your internet connection and try again.');
+                  } else if (error?.code !== 'auth/popup-closed-by-user' && error?.code !== 'auth/cancelled-popup-request') {
+                    let msg = error?.message || 'An error occurred during authentication.';
+                    msg = msg.replace(/^Firebase:\s*(Error\s*)?/, '').replace(/\s*\(auth\/[a-z0-9\-]+\)\.?$/, '');
+                    setErrorMsg(msg || 'An error occurred during authentication.');
+                  }
+                }
+              }}
               type="button" 
               className="w-full bg-[#161616] border border-[#333] text-white font-semibold py-3.5 rounded-xl flex items-center justify-center gap-3 hover:bg-[#222] active:scale-[0.98] transition-all"
             >

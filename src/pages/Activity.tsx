@@ -393,7 +393,7 @@ export default function Activity() {
   }, [routeData, distance, time]);
 
   return (
-    <div className="relative h-[100dvh] w-full bg-black overflow-hidden flex flex-col md:flex-row">
+    <div className="relative h-[100dvh] w-full bg-black overflow-hidden">
       <AnimatePresence>
         {showConfirmStop && (
           <motion.div
@@ -411,12 +411,12 @@ export default function Activity() {
         )}
       </AnimatePresence>
       
-      <div className="absolute inset-0 md:relative md:flex-1 z-0">
+      <div className="absolute inset-0 z-0">
         <MapContainer 
           center={mapCenter} 
           zoom={15} 
           zoomControl={false}
-          className="w-full h-full md:pb-0 pb-64"
+          className="w-full h-full pb-64 md:pb-32"
         >
           <TileLayer url={mapboxUrl} attribution="&copy; OpenStreetMap &copy; CARTO" />
           <MapController position={currentPosition} isAutoCenter={isAutoCenter} setIsAutoCenter={setIsAutoCenter} />
@@ -546,8 +546,8 @@ export default function Activity() {
         />
       </div>
 
-      <div className="absolute bottom-20 md:bottom-0 inset-x-0 md:relative md:w-[400px] md:h-[100dvh] z-20 flex flex-col justify-end md:justify-start">
-        <div className="bg-black/80 md:bg-[#0a0a0a] backdrop-blur-2xl max-h-[85vh] md:max-h-[100dvh] md:h-full border-t md:border-t-0 md:border-l border-[#222] p-6 md:p-8 rounded-t-[40px] md:rounded-none flex flex-col transition-all duration-500 overflow-y-auto">
+      <div className="absolute bottom-20 md:bottom-6 inset-x-0 z-20 flex flex-col justify-end pointer-events-none">
+        <div className="bg-black/80 backdrop-blur-2xl max-h-[85vh] border-t md:border border-[#222] p-6 md:p-8 rounded-t-[40px] md:rounded-[40px] flex flex-col transition-all duration-500 overflow-y-auto pointer-events-auto w-full md:w-[600px] mx-auto md:shadow-2xl md:shadow-black/50">
           <div className="w-12 h-1.5 bg-[#333] rounded-full mx-auto mb-8 md:hidden shrink-0" />
 
           {(workoutState === 'idle' || workoutState === 'finished') && (
