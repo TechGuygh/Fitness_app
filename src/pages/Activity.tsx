@@ -536,14 +536,6 @@ export default function Activity() {
             </motion.div>
           )}
         </AnimatePresence>
-
-        <ActivitySettingsModal 
-          isOpen={isSettingsOpen} 
-          onClose={() => setIsSettingsOpen(false)}
-          onSave={saveSettings}
-          paceThreshold={paceThreshold}
-          distanceThreshold={distanceThreshold}
-        />
       </div>
 
       <div className="absolute bottom-20 md:bottom-6 inset-x-0 z-20 flex flex-col justify-end pointer-events-none">
@@ -700,6 +692,14 @@ export default function Activity() {
           </div>
         </div>
       </div>
+
+      <ActivitySettingsModal 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)}
+        onSave={saveSettings}
+        paceThreshold={paceThreshold}
+        distanceThreshold={distanceThreshold}
+      />
     </div>
   );
 }

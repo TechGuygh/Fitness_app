@@ -28,8 +28,6 @@ export default function ActivitySettingsModal({
     }
   }, [isOpen, paceThreshold, distanceThreshold]);
 
-  if (!isOpen) return null;
-
   const handleSave = async () => {
     setSaving(true);
     await onSave(localPace, localDist);
