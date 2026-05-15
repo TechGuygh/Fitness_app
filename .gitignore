@@ -7,6 +7,4 @@ coverage/
 .env*
 !.env.example
 
-# Firebase configuration containing API keys
-firebase-applet-config.json
-firebase-blueprint.json
+
