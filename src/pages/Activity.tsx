@@ -12,6 +12,7 @@ import { handleFirestoreError, OperationType } from "@/src/lib/firebase-error";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { KalmanFilter } from "@/src/lib/KalmanFilter";
 import ActivitySettingsModal from "@/src/components/ActivitySettingsModal";
+import { Drawer } from "vaul";
 
 // ... (rest of the file as before until watchPosition logic) ...
 
@@ -111,7 +112,7 @@ function MapController({ position, isAutoCenter, setIsAutoCenter }: {
   }, [map, setIsAutoCenter]);
 
   useEffect(() => {
-    if (position && isAutoCenter) {
+    if (position && typeof position[0] === 'number' && typeof position[1] === 'number' && !isNaN(position[0]) && !isNaN(position[1]) && isAutoCenter) {
       map.panTo(position, { animate: true, duration: 0.4 });
     }
   }, [position, map, isAutoCenter]);
@@ -126,10 +127,11 @@ const InteractiveMarker: React.FC<{
   setIsAutoCenter: (v: boolean) => void;
 }> = ({ position, icon, label, setIsAutoCenter }) => {
   const map = useMap();
+  if (!position || typeof position[0] !== 'number' || typeof position[1] !== 'number' || isNaN(position[0]) || isNaN(position[1])) return null;
   return (
     <Marker 
       position={position} 
-      icon={icon}
+      icon={icon || undefined}
       eventHandlers={{
         click: () => {
           setIsAutoCenter(false);
@@ -395,6 +397,13 @@ export default function Activity() {
 
   return (
     <div className="relative h-[100dvh] w-full bg-black overflow-hidden">
+      {(workoutState === 'idle' || workoutState === 'finished') && (
+        <div className="absolute top-8 md:top-12 left-4 md:left-6 z-[500]">
+          <button onClick={() => navigate('/')} className="bg-black/50 backdrop-blur-md p-3 rounded-full border border-white/10 text-white hover:bg-black/70 transition-colors">
+            <ChevronLeft className="w-6 h-6" />
+          </button>
+        </div>
+      )}
       <AnimatePresence>
         {showConfirmStop && (
           <motion.div
@@ -412,15 +421,6 @@ export default function Activity() {
         )}
       </AnimatePresence>
       
-      <div className="absolute top-8 left-4 md:left-8 z-[500]">
-        <button 
-          onClick={() => navigate('/')} 
-          className="w-10 h-10 bg-black/80 backdrop-blur-md rounded-full flex items-center justify-center border border-[#333] hover:bg-[#222] active:scale-95 transition-all text-white shadow-lg"
-        >
-          <ChevronLeft className="w-6 h-6" />
-        </button>
-      </div>
-
       <div className="absolute inset-0 z-0">
         <MapContainer 
           center={mapCenter} 
@@ -548,9 +548,9 @@ export default function Activity() {
         </AnimatePresence>
       </div>
 
-      <div className="absolute bottom-0 md:bottom-6 inset-x-0 z-20 flex flex-col justify-end pointer-events-none">
-        <div className="bg-black/80 backdrop-blur-2xl max-h-[85vh] border-t md:border border-[#222] p-6 md:p-8 rounded-t-[40px] md:rounded-[40px] flex flex-col transition-all duration-500 overflow-y-auto pointer-events-auto w-full md:w-[600px] mx-auto md:shadow-2xl md:shadow-black/50">
-          <div className="w-12 h-1.5 bg-[#333] rounded-full mx-auto mb-6 md:hidden shrink-0" />
+      <div className="absolute bottom-0 md:bottom-6 left-0 right-0 z-[200] max-h-[90dvh] md:max-h-[85vh] flex flex-col bg-[#111]/90 backdrop-blur-2xl rounded-t-[40px] md:border border-t border-[#333] shadow-2xl pointer-events-auto w-full md:w-[600px] mx-auto md:shadow-black/50 overflow-hidden transform-gpu">
+        <div className="mx-auto w-12 h-1.5 flex-shrink-0 rounded-full bg-[#444] mb-4 mt-4 md:hidden" />
+        <div className="flex-1 overflow-y-auto px-6 pb-12 scroller">
 
           {(workoutState === 'idle' || workoutState === 'finished') && (
             <div className="flex-1 flex flex-col md:justify-center mb-8 md:mb-0 shrink-0">
@@ -702,6 +702,11 @@ export default function Activity() {
           </div>
         </div>
       </div>
+      <style>{`
+        .scroller::-webkit-scrollbar {
+            width: 0px;
+        }
+      `}</style>
 
       <ActivitySettingsModal 
         isOpen={isSettingsOpen} 
