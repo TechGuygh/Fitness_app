@@ -145,7 +145,7 @@ export default function Messages() {
   );
 
   return (
-    <div className="flex h-[calc(100vh-144px)] mt-16 md:mt-0 md:h-screen bg-black overflow-hidden relative">
+    <div className="flex h-[calc(100dvh-144px)] mt-16 md:mt-0 md:h-[100dvh] bg-black overflow-hidden relative">
       {/* Sidebar - User List */}
       <div className={cn(
         "flex-col w-full md:w-80 border-r border-[#222] bg-[#0a0a0a]",
@@ -332,6 +332,10 @@ export default function Messages() {
                   }}
                   placeholder="Message" 
                   rows={1}
+                  autoCapitalize="sentences"
+                  autoCorrect="on"
+                  spellCheck={true}
+                  dir="auto"
                   className="flex-1 bg-transparent border-none outline-none text-base text-white resize-none max-h-32 py-2.5 overflow-y-auto min-h-[40px]"
                   style={{ height: 'auto' }}
                 />

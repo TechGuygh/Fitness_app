@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Play, Pause, Square, MapPin, X, Signal, Settings } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from "react-leaflet";
-import { AreaChart, Area, ResponsiveContainer, XAxis, Tooltip, BarChart, Bar } from "recharts";
+import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip, BarChart, Bar, ComposedChart, Line, Legend } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -346,15 +346,18 @@ export default function Activity() {
     const splitsList = [];
     let nextSplitDist = 1;
     let lastSplitTime = 0;
+    let lastSplitAlt = routeData[0]?.altitude || 0;
     
     for (const pt of routeData) {
       if (pt.distance >= nextSplitDist) {
         splitsList.push({
           split: nextSplitDist,
           pace: (pt.timeSeconds - lastSplitTime) / 60,
+          elevationChange: pt.altitude - lastSplitAlt,
         });
         nextSplitDist++;
         lastSplitTime = pt.timeSeconds;
+        lastSplitAlt = pt.altitude;
       }
     }
     if (distance > nextSplitDist - 1 + 0.05) {
@@ -362,6 +365,7 @@ export default function Activity() {
       splitsList.push({
         split: nextSplitDist,
         pace: (time - lastSplitTime) / 60 / remDist,
+        elevationChange: (routeData[routeData.length - 1]?.altitude || 0) - lastSplitAlt,
         isPartial: true,
       });
     }
@@ -579,18 +583,27 @@ export default function Activity() {
                 <div className="mt-8 flex flex-col gap-6 shrink-0 w-full mb-8">
                   {calculatedSplits.length > 0 && (
                       <div>
-                          <h5 className="text-gray-300 text-xs font-bold mb-3 uppercase tracking-wider">Pace Splits (min/km)</h5>
-                          <div className="h-32 w-full">
+                          <h5 className="text-gray-300 text-xs font-bold mb-3 uppercase tracking-wider">Splits: Pace & Elevation Change</h5>
+                          <div className="h-40 w-full">
                             <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={calculatedSplits}>
+                                <ComposedChart data={calculatedSplits}>
                                     <XAxis dataKey="split" axisLine={false} tickLine={false} tick={{ fill: '#666', fontSize: 10 }} />
+                                    <YAxis yAxisId="left" hide domain={['auto', 'auto']} />
+                                    <YAxis yAxisId="right" orientation="right" hide domain={['auto', 'auto']} />
                                     <Tooltip 
                                         contentStyle={{ backgroundColor: '#111', borderColor: '#333', borderRadius: '8px' }}
                                         itemStyle={{ color: '#fff' }}
                                         cursor={{ fill: '#ffffff10' }}
+                                        formatter={(value: number, name: string) => {
+                                            if (name === "elevationChange") return [`${value > 0 ? '+' : ''}${value.toFixed(1)} m`, "Elevation Change"];
+                                            return [`${Math.floor(value)}'${Math.floor((value % 1) * 60).toString().padStart(2, '0')}"`, "Pace"];
+                                        }}
+                                        labelFormatter={(label) => `Split: ${label} km`}
                                     />
-                                    <Bar dataKey="pace" fill="var(--color-brand-500)" radius={[4, 4, 0, 0]} />
-                                </BarChart>
+                                    <Legend wrapperStyle={{ fontSize: 10, paddingTop: 10 }} />
+                                    <Bar yAxisId="left" dataKey="pace" fill="var(--color-brand-500)" radius={[4, 4, 0, 0]} name="Pace" />
+                                    <Line yAxisId="right" type="monotone" dataKey="elevationChange" stroke="#4ade80" strokeWidth={2} dot={{ r: 3, fill: '#4ade80' }} name="Elevation Change" />
+                                </ComposedChart>
                             </ResponsiveContainer>
                           </div>
                       </div>
