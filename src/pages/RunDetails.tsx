@@ -81,10 +81,10 @@ export default function RunDetails() {
     const inviteFriend = async (friendId: string) => {
         if (!runId || !user) return;
         try {
-            await addDoc(collection(db, "invites"), {
+            await addDoc(collection(db, "runInvitations"), {
                 runId,
-                fromUserId: user.uid,
-                toUserId: friendId,
+                senderId: user.uid,
+                receiverId: friendId,
                 status: 'pending',
                 createdAt: serverTimestamp()
             });

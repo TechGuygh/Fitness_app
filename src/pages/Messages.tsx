@@ -126,6 +126,12 @@ export default function Messages() {
         read: false
       });
       setNewMessage("");
+      setTimeout(() => {
+        const textarea = document.getElementById('chat-textarea') as HTMLTextAreaElement;
+        if (textarea) {
+          textarea.style.height = 'auto';
+        }
+      }, 0);
     } catch (e) {
       handleFirestoreError(e, OperationType.CREATE, "messages");
     }
@@ -306,21 +312,35 @@ export default function Messages() {
             <div className="p-4 md:p-6 bg-black border-t border-[#222]">
               <form 
                 onSubmit={handleSendMessage}
-                className="flex items-center gap-3 bg-[#111] border border-[#222] rounded-2xl p-2 pl-4 pr-2 focus-within:ring-1 ring-brand-500/30 transition-all shadow-lg"
+                className="flex items-end gap-3 bg-[#111] border border-[#222] rounded-2xl p-2 pl-4 flex-none focus-within:ring-1 ring-brand-500/30 transition-all shadow-lg overflow-hidden"
               >
-                <input 
-                  type="text" 
+                <textarea 
+                  id="chat-textarea"
                   value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  placeholder="Type a message..." 
-                  className="flex-1 bg-transparent border-none outline-none text-sm text-white"
+                  onChange={(e) => {
+                    setNewMessage(e.target.value);
+                    e.target.style.height = 'auto';
+                    e.target.style.height = `${e.target.scrollHeight}px`;
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      if (newMessage.trim()) {
+                        handleSendMessage(e as unknown as React.FormEvent);
+                      }
+                    }
+                  }}
+                  placeholder="Message" 
+                  rows={1}
+                  className="flex-1 bg-transparent border-none outline-none text-base text-white resize-none max-h-32 py-2.5 overflow-y-auto min-h-[40px]"
+                  style={{ height: 'auto' }}
                 />
                 <button 
                   type="submit"
                   disabled={!newMessage.trim()}
-                  className="w-10 h-10 bg-brand-500 text-black rounded-xl flex items-center justify-center hover:bg-brand-400 disabled:opacity-50 disabled:hover:bg-brand-500 transition-all active:scale-95"
+                  className="w-10 h-10 shrink-0 bg-brand-500 text-black rounded-full flex items-center justify-center hover:bg-brand-400 disabled:opacity-50 disabled:hover:bg-brand-500 transition-all active:scale-95 mb-0.5"
                 >
-                  <Send className="w-5 h-5" />
+                  <Send className="w-5 h-5 ml-0.5" />
                 </button>
               </form>
             </div>
